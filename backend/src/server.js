@@ -6,6 +6,10 @@ import helmet from "helmet";
 import dotenv from "dotenv";
 import authRoutes from "./routes/auth.routes.js";
 import customerRoutes from "./routes/customer.routes.js";
+import enquiryRoutes from "./routes/enquiry.routes.js";
+
+
+
 
 dotenv.config();
 
@@ -55,6 +59,11 @@ app.get("/auth/me", authenticateToken, (req, res) => {
     },
   });
 });
+
+app.use("/enquiries", enquiryRoutes);
+
+
+
 
 // Handle unknown routes
 app.use((req, res) => {
