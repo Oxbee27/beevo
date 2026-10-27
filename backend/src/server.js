@@ -5,6 +5,7 @@ import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
 import authRoutes from "./routes/auth.routes.js";
+import customerRoutes from "./routes/customer.routes.js";
 
 dotenv.config();
 
@@ -43,6 +44,8 @@ app.get("/health", (req, res) => {
 
 // Authentication routes
 app.use("/auth", authRoutes);
+app.use("/customers", customerRoutes);
+
 app.get("/auth/me", authenticateToken, (req, res) => {
   res.status(200).json({
     success: true,
@@ -52,7 +55,6 @@ app.get("/auth/me", authenticateToken, (req, res) => {
     },
   });
 });
-
 
 // Handle unknown routes
 app.use((req, res) => {
