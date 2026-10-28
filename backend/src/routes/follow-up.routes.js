@@ -6,6 +6,9 @@ import { listFollowUpsController } from "../controllers/list-follow-ups.controll
 import { getFollowUpController } from "../controllers/get-follow-up.controller.js";
 import { updateFollowUpController } from "../controllers/update-follow-up.controller.js";
 import { deleteFollowUpController } from "../controllers/delete-follow-up.controller.js";
+import {
+  getUpcomingFollowUpsController,
+} from "../controllers/get-upcoming-follow-ups.controller.js";
 
 const router = Router();
 
@@ -13,6 +16,7 @@ router.use(authenticateToken);
 
 router.post("/", createFollowUpController);
 router.get("/", listFollowUpsController);
+router.get("/upcoming", getUpcomingFollowUpsController);
 router.get("/:id", getFollowUpController);
 router.patch("/:id", updateFollowUpController);
 router.delete("/:id", deleteFollowUpController);

@@ -8,6 +8,7 @@ import authRoutes from "./routes/auth.routes.js";
 import customerRoutes from "./routes/customer.routes.js";
 import enquiryRoutes from "./routes/enquiry.routes.js";
 import followUpRoutes from "./routes/follow-up.routes.js";
+import dashboardRoutes from "./routes/dashboard.routes.js";
 
 
 
@@ -63,7 +64,7 @@ app.get("/auth/me", authenticateToken, (req, res) => {
 
 app.use("/enquiries", enquiryRoutes);
 app.use("/follow-ups", followUpRoutes);
-
+app.use("/dashboard", dashboardRoutes);
 
 
 

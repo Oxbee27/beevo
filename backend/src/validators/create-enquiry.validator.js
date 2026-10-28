@@ -6,7 +6,7 @@ export const createEnquirySchema = z
     customerId: z.coerce.number().int().positive(),
     subject: z.string().trim().min(2).max(200),
     description: z.string().trim().max(3000).optional(),
-    source: z.string().trim().max(100).optional(),
+    source: z.string().trim().max(50).optional(),
     status: z
       .enum(["new", "contacted", "qualified", "converted", "lost"])
       .optional(),

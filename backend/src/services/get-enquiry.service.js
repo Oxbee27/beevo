@@ -7,8 +7,11 @@ export async function getEnquiry(businessId, enquiryId) {
        e.*,
        c.name AS customer_name
      FROM enquiries e
-     JOIN customers c ON c.id = e.customer_id
-     WHERE e.business_id = $1 AND e.id = $2`,
+     JOIN customers c
+       ON c.id = e.customer_id
+      AND c.business_id = e.business_id
+     WHERE e.business_id = $1
+       AND e.id = $2`,
     [businessId, enquiryId]
   );
 
