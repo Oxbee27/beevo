@@ -69,7 +69,12 @@ app.use((req, res) => {
 
 // Central error handler
 app.use((error, req, res, next) => {
-  console.error("Request error:", error.message);
+  console.error("Request error details:", {
+  name: error.name,
+  code: error.code,
+  message: error.message,
+  stack: error.stack,
+});;
 
   const status =
     Number.isInteger(error.status) &&
