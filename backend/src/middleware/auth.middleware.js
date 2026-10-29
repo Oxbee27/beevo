@@ -1,3 +1,4 @@
+
 import jwt from "jsonwebtoken";
 
 export function authenticateToken(req, res, next) {
@@ -13,7 +14,21 @@ export function authenticateToken(req, res, next) {
   const token = authorization.slice(7);
 
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const payload = jwt.verify(token, process.env.JWT_SECRET, {
+      algorithms: ["HS256"],
+    });
+
+    if (
+      typeof payload === "string" ||
+      !payload.sub ||
+      !payload.businessId ||
+      !payload.role
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired authentication token.",
+      });
+    }
 
     req.user = {
       id: payload.sub,
