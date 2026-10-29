@@ -42,7 +42,7 @@ export async function createFollowUp(businessId, data) {
      )
      VALUES (
        $1, $2, $3, $4, $5, $6,
-       CASE WHEN $6 = 'completed' THEN CURRENT_TIMESTAMP ELSE NULL END
+       CASE WHEN $6::varchar = 'completed' THEN CURRENT_TIMESTAMP ELSE NULL END
      )
      RETURNING *`,
     [
