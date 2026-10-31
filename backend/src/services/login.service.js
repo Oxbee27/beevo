@@ -12,6 +12,7 @@ export async function loginUser({ email, password }) {
       u.password_hash,
       u.role,
       u.is_active,
+      u.token_version,
       b.name AS business_name
     FROM users u
     JOIN businesses b

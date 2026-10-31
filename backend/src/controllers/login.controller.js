@@ -20,11 +20,13 @@ export async function loginController(req, res, next) {
     const user = await loginUser(validation.data);
     const token = generateToken(user);
 
+    const { token_version, ...publicUser } = user;
+
     return res.status(200).json({
       success: true,
       message: "Login successful.",
       data: {
-        user,
+        user: publicUser,
         token,
       },
     });

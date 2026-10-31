@@ -11,11 +11,13 @@ export function generateToken(user) {
     {
       businessId: String(user.business_id),
       role: user.role,
+      tokenVersion: Number(user.token_version ?? 0),
     },
     secret,
     {
       subject: String(user.id),
       expiresIn: process.env.JWT_EXPIRES_IN || "1h",
+      algorithm: "HS256",
     }
   );
 }

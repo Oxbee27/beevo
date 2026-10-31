@@ -22,7 +22,9 @@ export async function authenticateToken(req, res, next) {
       typeof payload === "string" ||
       !payload.sub ||
       !payload.businessId ||
-      !payload.role
+      !payload.role ||
+      !Number.isInteger(payload.tokenVersion ?? 0) ||
+      (payload.tokenVersion ?? 0) < 0
     ) {
       return res.status(401).json({
         success: false,
@@ -30,14 +32,14 @@ export async function authenticateToken(req, res, next) {
       });
     }
 
-    // Verify the account still exists and is active.
     const result = await pool.query(
       `
       SELECT
         id,
         business_id,
         role,
-        is_active
+        is_active,
+        token_version
       FROM users
       WHERE id = $1
         AND business_id = $2
@@ -57,7 +59,16 @@ export async function authenticateToken(req, res, next) {
 
     const user = result.rows[0];
 
-    // Always use the current database account details.
+    if (
+      Number(payload.tokenVersion ?? 0) !==
+      Number(user.token_version)
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: "Your session has expired. Please log in again.",
+      });
+    }
+
     req.user = {
       id: String(user.id),
       businessId: String(user.business_id),
@@ -66,9 +77,11 @@ export async function authenticateToken(req, res, next) {
 
     return next();
   } catch (error) {
-    if (error.name === "JsonWebTokenError" ||
-        error.name === "TokenExpiredError" ||
-        error.name === "NotBeforeError") {
+    if (
+      error.name === "JsonWebTokenError" ||
+      error.name === "TokenExpiredError" ||
+      error.name === "NotBeforeError"
+    ) {
       return res.status(401).json({
         success: false,
         message: "Invalid or expired authentication token.",
