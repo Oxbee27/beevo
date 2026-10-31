@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticateToken } from "../middleware/auth.middleware.js";
+import { requirePermission } from "../middleware/require-permission.middleware.js";
 
 import { createFollowUpController } from "../controllers/create-follow-up.controller.js";
 import { listFollowUpsController } from "../controllers/list-follow-ups.controller.js";
@@ -14,11 +15,11 @@ const router = Router();
 
 router.use(authenticateToken);
 
-router.post("/", createFollowUpController);
-router.get("/", listFollowUpsController);
-router.get("/upcoming", getUpcomingFollowUpsController);
-router.get("/:id", getFollowUpController);
-router.patch("/:id", updateFollowUpController);
-router.delete("/:id", deleteFollowUpController);
+router.post("/", requirePermission("follow_ups.create"), createFollowUpController);
+router.get("/", requirePermission("follow_ups.view"), listFollowUpsController);
+router.get("/upcoming", requirePermission("follow_ups.view"), getUpcomingFollowUpsController);
+router.get("/:id", requirePermission("follow_ups.view"), getFollowUpController);
+router.patch("/:id", requirePermission("follow_ups.edit"), updateFollowUpController);
+router.delete("/:id", requirePermission("follow_ups.delete"), deleteFollowUpController);
 
 export default router;

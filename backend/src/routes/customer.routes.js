@@ -1,6 +1,6 @@
-
 import { Router } from "express";
 import { authenticateToken } from "../middleware/auth.middleware.js";
+import { requirePermission } from "../middleware/require-permission.middleware.js";
 
 import { createCustomerController } from "../controllers/create-customer.controller.js";
 import { listCustomersController } from "../controllers/list-customers.controller.js";
@@ -12,10 +12,10 @@ const router = Router();
 
 router.use(authenticateToken);
 
-router.post("/", createCustomerController);
-router.get("/", listCustomersController);
-router.get("/:id", getCustomerController);
-router.patch("/:id", updateCustomerController);
-router.delete("/:id", deleteCustomerController);
+router.post("/", requirePermission("customers.create"), createCustomerController);
+router.get("/", requirePermission("customers.view"), listCustomersController);
+router.get("/:id", requirePermission("customers.view"), getCustomerController);
+router.patch("/:id", requirePermission("customers.edit"), updateCustomerController);
+router.delete("/:id", requirePermission("customers.delete"), deleteCustomerController);
 
 export default router;

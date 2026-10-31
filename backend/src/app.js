@@ -8,8 +8,14 @@ import customerRoutes from "./routes/customer.routes.js";
 import enquiryRoutes from "./routes/enquiry.routes.js";
 import followUpRoutes from "./routes/follow-up.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
+import roleRoutes from "./routes/role.routes.js";
+
+
 
 const app = express();
+
+// Trust Render's reverse proxy (one hop).
+app.set("trust proxy", 1);
 
 const CORS_ORIGIN =
   process.env.CORS_ORIGIN || "http://localhost:5173";
@@ -23,7 +29,6 @@ app.use(
 );
 
 app.use(express.json({ limit: "1mb" }));
-
 // Basic API endpoint
 app.get("/", (req, res) => {
   res.status(200).json({
@@ -43,6 +48,8 @@ app.get("/health", (req, res) => {
 
 // Authentication routes
 app.use("/auth", authRoutes);
+
+app.use("/roles", roleRoutes);
 app.use("/customers", customerRoutes);
 
 app.get("/auth/me", authenticateToken, (req, res) => {
