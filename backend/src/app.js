@@ -9,6 +9,7 @@ import enquiryRoutes from "./routes/enquiry.routes.js";
 import followUpRoutes from "./routes/follow-up.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import roleRoutes from "./routes/role.routes.js";
+import staffRoutes from "./routes/staff.routes.js";
 
 
 
@@ -50,6 +51,7 @@ app.get("/health", (req, res) => {
 app.use("/auth", authRoutes);
 
 app.use("/roles", roleRoutes);
+app.use("/staff", staffRoutes);
 app.use("/customers", customerRoutes);
 
 app.get("/auth/me", authenticateToken, (req, res) => {
