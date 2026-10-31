@@ -9,6 +9,6 @@ export const createStaffSchema = z
 
     password: z.string().min(8).max(72),
 
-    roleId: z.string().regex(/^\d+$/).nullable().optional(),
+    roleId: z.string().regex(/^[1-9]\d*$/, "Please select a valid staff role.").nullable().optional(),
   })
   .strict();

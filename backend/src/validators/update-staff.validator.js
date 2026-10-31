@@ -8,7 +8,7 @@ export const updateStaffSchema = z
       .transform((email) => email.toLowerCase())
       .optional(),
 
-    roleId: z.string().regex(/^\d+$/).nullable().optional(),
+    roleId: z.string().regex(/^[1-9]\d*$/, "Please select a valid staff role.").nullable().optional(),
   })
   .strict()
   .refine(

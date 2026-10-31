@@ -8,7 +8,7 @@ export async function updateStaffController(req, res, next) {
     if (!validation.success) {
       return res.status(400).json({
         success: false,
-        message: "Invalid staff data.",
+        message: "Please check the information you entered.",
         errors: validation.error.issues.map((issue) => ({
           field: issue.path.join("."),
           message: issue.message,
