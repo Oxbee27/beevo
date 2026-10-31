@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { passwordSchema } from "./password.schema.js";
 
 export const registerSchema = z
   .object({
@@ -7,8 +8,7 @@ export const registerSchema = z
     email: z.string().trim().email().max(255).transform(
       (email) => email.toLowerCase()
     ),
-    password: z.string().min(8).max(72),
+    password: passwordSchema,
     phone: z.string().trim().max(30).optional(),
   })
   .strict();
-  

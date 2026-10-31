@@ -13,7 +13,7 @@ describe("Beevo staff management validation", () => {
     const result = createStaffSchema.safeParse({
       name: "Test Staff",
       email: "STAFF@EXAMPLE.COM",
-      password: "ExamplePass123",
+      password: "ExamplePass@123",
       roleId: "1",
     });
 
@@ -25,7 +25,7 @@ describe("Beevo staff management validation", () => {
     const result = createStaffSchema.safeParse({
       name: "Unassigned Staff",
       email: "unassigned@example.com",
-      password: "ExamplePass123",
+      password: "ExamplePass@123",
     });
 
     expect(result.success).toBe(true);
@@ -35,7 +35,7 @@ describe("Beevo staff management validation", () => {
     const result = createStaffSchema.safeParse({
       name: "Test Staff",
       email: "staff@example.com",
-      password: "ExamplePass123",
+      password: "ExamplePass@123",
       role: "owner",
     });
 

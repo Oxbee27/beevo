@@ -30,7 +30,7 @@ describe("Beevo login behaviour", () => {
       .post("/auth/login")
       .send({
         email: "test@example.com",
-        password: "ExamplePass123",
+        password: "ExamplePass@123",
       });
 
     expect(response.status).toBe(200);
@@ -52,7 +52,7 @@ describe("Beevo login behaviour", () => {
       .post("/auth/login")
       .send({
         email,
-        password: "ExamplePass123",
+        password: "ExamplePass@123",
       });
 
     expect(response.status).toBe(401);
