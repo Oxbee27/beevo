@@ -8,12 +8,13 @@ async function claimDueMessages(db, workerId, batchSize) {
   try {
     await client.query("BEGIN");
 
-    // Recover attempts abandoned by a worker that stopped unexpectedly.
+    // An abandoned delivery has an unknown provider outcome.
+    // Never automatically retry it: the provider may already have accepted it.
     await client.query(
       `
         UPDATE message_delivery_attempts a
-        SET status = 'failed',
-            error_message = 'The previous delivery worker stopped before completion.',
+        SET status = 'unknown',
+            error_message = 'The previous delivery worker stopped before completion; provider outcome is unknown.',
             attempted_at = NOW()
         FROM follow_up_messages m
         WHERE m.business_id = a.business_id
@@ -28,12 +29,8 @@ async function claimDueMessages(db, workerId, batchSize) {
     await client.query(
       `
         UPDATE follow_up_messages
-        SET status = CASE
-              WHEN attempt_count >= max_attempts THEN 'failed'
-              ELSE 'pending'
-            END,
-            next_attempt_at = NOW(),
-            last_error = 'The previous delivery worker stopped before completion.',
+        SET status = 'unknown',
+            last_error = 'Delivery outcome is unknown because the previous worker stopped before completion. Manual review is required; automatic retry was prevented to avoid duplicate delivery.',
             locked_at = NULL,
             locked_by = NULL,
             updated_at = NOW()
