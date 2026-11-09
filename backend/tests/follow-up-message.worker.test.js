@@ -136,16 +136,17 @@ function createHarness({
     connect: vi.fn(async () => client),
 
     async query(sql) {
-      state.queries.push(sql.replace(/\s+/g, " ").trim());
+      const normalized = sql.replace(/\s+/g, " ").trim();
+      state.queries.push(normalized);
 
-      if (sql.includes("SELECT 1 FROM follow_ups")) {
+      if (normalized.includes("SELECT 1 FROM follow_ups")) {
         return {
           rows: eligibleAfterClaim ? [{ "?column?": 1 }] : [],
           rowCount: eligibleAfterClaim ? 1 : 0,
         };
       }
 
-      throw new Error(`Unexpected pool SQL: ${sql}`);
+      throw new Error(`Unexpected pool SQL: ${normalized}`);
     },
   };
 
@@ -255,7 +256,8 @@ describe("Beevo scheduled-message worker", () => {
     const retryQueries = state.queries.filter(
       (query) =>
         query.includes("SET status = CASE") &&
-        query.includes("next_attempt_at"),
+        query.includes("next_attempt_at") &&
+        query.includes("last_error = $5"),
     );
 
     expect(retryQueries).toHaveLength(0);
