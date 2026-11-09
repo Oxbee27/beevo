@@ -9,7 +9,7 @@ export async function loginController(req, res, next) {
     if (!validation.success) {
       return res.status(400).json({
         success: false,
-        message: "Invalid login data.",
+        message: "We couldn't sign you in. Please check your email and password.",
         errors: validation.error.issues.map((issue) => ({
           field: issue.path.join("."),
           message: issue.message,

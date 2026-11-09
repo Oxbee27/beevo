@@ -1,6 +1,5 @@
 import { registerSchema } from "../validators/register.validator.js";
 import { registerBusiness } from "../services/register.service.js";
-import { generateToken } from "../utils/generate-token.js";
 
 export async function registerController(req, res, next) {
   try {
@@ -9,7 +8,7 @@ export async function registerController(req, res, next) {
     if (!validation.success) {
       return res.status(400).json({
         success: false,
-        message: "Invalid registration data.",
+        message: "We couldn't create your account. Please check your details and try again.",
         errors: validation.error.issues.map((issue) => ({
           field: issue.path.join("."),
           message: issue.message,
@@ -18,7 +17,6 @@ export async function registerController(req, res, next) {
     }
 
     const result = await registerBusiness(validation.data);
-    const token = generateToken(result.user);
 
     return res.status(201).json({
       success: true,
@@ -26,7 +24,6 @@ export async function registerController(req, res, next) {
       data: {
         business: result.business,
         user: result.user,
-        token,
       },
     });
   } catch (error) {

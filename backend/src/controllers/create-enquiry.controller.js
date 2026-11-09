@@ -9,7 +9,7 @@ export async function createEnquiryController(req, res, next) {
     if (!validation.success) {
       return res.status(400).json({
         success: false,
-        message: "Invalid enquiry data.",
+        message: "We couldn't create this enquiry. Please check the information and try again.",
         errors: validation.error.issues.map((issue) => ({
           field: issue.path.join("."),
           message: issue.message,

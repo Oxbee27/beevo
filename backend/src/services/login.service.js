@@ -27,6 +27,8 @@ export async function loginUser({ email, password }) {
   if (!user) {
     const error = new Error("Invalid email or password.");
     error.status = 401;
+    error.publicMessage =
+      "The email or password you entered is incorrect. Please try again.";
     throw error;
   }
 
@@ -38,6 +40,8 @@ export async function loginUser({ email, password }) {
   if (!passwordMatches || !user.is_active) {
     const error = new Error("Invalid email or password.");
     error.status = 401;
+    error.publicMessage =
+      "The email or password you entered is incorrect. Please try again.";
     throw error;
   }
 

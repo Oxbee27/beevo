@@ -9,7 +9,7 @@ export async function deleteCustomerController(req, res, next) {
     if (!validation.success) {
       return res.status(400).json({
         success: false,
-        message: "Invalid customer ID.",
+        message: "Please enter a valid customer ID.",
       });
     }
 
@@ -21,7 +21,7 @@ export async function deleteCustomerController(req, res, next) {
     if (!deleted) {
       return res.status(404).json({
         success: false,
-        message: "Customer not found.",
+        message: "We couldn't find this customer.",
       });
     }
 

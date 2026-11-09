@@ -8,7 +8,7 @@ export async function createFollowUpController(req, res, next) {
     if (!validation.success) {
       return res.status(400).json({
         success: false,
-        message: "Validation failed.",
+        message: "Some of the information you entered needs attention. Please review it and try again.",
         errors: validation.error.issues,
       });
     }

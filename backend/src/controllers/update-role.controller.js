@@ -8,7 +8,7 @@ export async function updateRoleController(req, res, next) {
     if (!validation.success) {
       return res.status(400).json({
         success: false,
-        message: "Invalid role data.",
+        message: "We couldn't save this role. Please check the information and try again.",
         errors: validation.error.issues.map((issue) => ({
           field: issue.path.join("."),
           message: issue.message,

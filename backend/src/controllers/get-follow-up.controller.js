@@ -8,7 +8,7 @@ export async function getFollowUpController(req, res, next) {
     if (!validation.success) {
       return res.status(400).json({
         success: false,
-        message: "Invalid follow-up ID.",
+        message: "Please enter a valid follow-up ID.",
         errors: validation.error.issues,
       });
     }
@@ -21,7 +21,7 @@ export async function getFollowUpController(req, res, next) {
     if (!followUp) {
       return res.status(404).json({
         success: false,
-        message: "Follow-up not found.",
+        message: "We couldn't find this follow-up.",
       });
     }
 

@@ -10,7 +10,7 @@ export async function updateCustomerController(req, res, next) {
     if (!idValidation.success) {
       return res.status(400).json({
         success: false,
-        message: "Invalid customer ID.",
+        message: "Please enter a valid customer ID.",
       });
     }
 
@@ -19,7 +19,7 @@ export async function updateCustomerController(req, res, next) {
     if (!bodyValidation.success) {
       return res.status(400).json({
         success: false,
-        message: "Invalid customer update data.",
+        message: "We couldn't update this customer. Please check the information and try again.",
         errors: bodyValidation.error.issues.map((issue) => ({
           field: issue.path.join("."),
           message: issue.message,
@@ -36,7 +36,7 @@ export async function updateCustomerController(req, res, next) {
     if (!customer) {
       return res.status(404).json({
         success: false,
-        message: "Customer not found.",
+        message: "We couldn't find this customer.",
       });
     }
 

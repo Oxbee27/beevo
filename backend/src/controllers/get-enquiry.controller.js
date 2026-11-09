@@ -9,7 +9,7 @@ export async function getEnquiryController(req, res, next) {
     if (!validation.success) {
       return res.status(400).json({
         success: false,
-        message: "Invalid enquiry ID.",
+        message: "Please enter a valid enquiry ID.",
       });
     }
 
@@ -21,7 +21,7 @@ export async function getEnquiryController(req, res, next) {
     if (!enquiry) {
       return res.status(404).json({
         success: false,
-        message: "Enquiry not found.",
+        message: "We couldn't find this enquiry.",
       });
     }
 

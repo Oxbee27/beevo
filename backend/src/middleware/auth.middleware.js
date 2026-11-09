@@ -7,7 +7,7 @@ export async function authenticateToken(req, res, next) {
   if (!authorization?.startsWith("Bearer ")) {
     return res.status(401).json({
       success: false,
-      message: "Authentication token required.",
+      message: "Please log in to continue.",
     });
   }
 
@@ -28,7 +28,7 @@ export async function authenticateToken(req, res, next) {
     ) {
       return res.status(401).json({
         success: false,
-        message: "Invalid or expired authentication token.",
+        message: "Your session is invalid or has expired. Please log in again.",
       });
     }
 
@@ -53,7 +53,7 @@ export async function authenticateToken(req, res, next) {
     ) {
       return res.status(401).json({
         success: false,
-        message: "Your account is inactive or no longer available.",
+        message: "Your account is currently unavailable. Please contact your business owner.",
       });
     }
 
@@ -84,7 +84,7 @@ export async function authenticateToken(req, res, next) {
     ) {
       return res.status(401).json({
         success: false,
-        message: "Invalid or expired authentication token.",
+        message: "Your session is invalid or has expired. Please log in again.",
       });
     }
 

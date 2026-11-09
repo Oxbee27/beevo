@@ -10,7 +10,7 @@ export async function updateEnquiryController(req, res, next) {
     if (!idValidation.success) {
       return res.status(400).json({
         success: false,
-        message: "Invalid enquiry ID.",
+        message: "Please enter a valid enquiry ID.",
       });
     }
 
@@ -19,7 +19,7 @@ export async function updateEnquiryController(req, res, next) {
     if (!bodyValidation.success) {
       return res.status(400).json({
         success: false,
-        message: "Invalid enquiry update data.",
+        message: "We couldn't update this enquiry. Please check the information and try again.",
         errors: bodyValidation.error.issues.map((issue) => ({
           field: issue.path.join("."),
           message: issue.message,
@@ -36,7 +36,7 @@ export async function updateEnquiryController(req, res, next) {
     if (!enquiry) {
       return res.status(404).json({
         success: false,
-        message: "Enquiry not found.",
+        message: "We couldn't find this enquiry.",
       });
     }
 

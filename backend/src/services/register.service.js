@@ -44,6 +44,8 @@ export async function registerBusiness({
         "An account with this email already exists."
       );
       conflict.status = 409;
+      conflict.publicMessage =
+        "An account with this email already exists. Please log in instead.";
       throw conflict;
     }
 

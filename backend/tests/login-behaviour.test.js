@@ -44,7 +44,7 @@ describe("Beevo login behaviour", () => {
     ["incorrect password", "test@example.com"],
     ["unknown email", "unknown@example.com"],
   ])("should reject login for %s", async (_scenario, email) => {
-    const error = new Error("Invalid email or password.");
+    const error = new Error("The email or password you entered is incorrect. Please try again.");
     error.status = 401;
     mockLoginUser.mockRejectedValue(error);
 
@@ -57,6 +57,6 @@ describe("Beevo login behaviour", () => {
 
     expect(response.status).toBe(401);
     expect(response.body.success).toBe(false);
-    expect(response.body.message).toBe("Invalid email or password.");
+    expect(response.body.message).toBe("The email or password you entered is incorrect. Please try again.");
   });
 });

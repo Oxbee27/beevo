@@ -30,7 +30,7 @@ export function requirePermission(permissionCode) {
       if (result.rowCount === 0) {
         return res.status(401).json({
           success: false,
-          message: "Your account is no longer available.",
+          message: "Your account is currently unavailable. Please contact your business owner.",
         });
       }
 
@@ -48,7 +48,7 @@ export function requirePermission(permissionCode) {
       if (!user.has_permission) {
         return res.status(403).json({
           success: false,
-          message: "You do not have permission to perform this action.",
+          message: "You don't have access to this feature. Please contact your business owner.",
         });
       }
 

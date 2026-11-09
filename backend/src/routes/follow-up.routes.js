@@ -15,9 +15,32 @@ const router = Router();
 
 router.use(authenticateToken);
 
+import {
+  scheduleFollowUpMessageController,
+  listFollowUpMessagesController,
+  cancelFollowUpMessageController,
+} from "../controllers/follow-up-messages.controller.js";
+
+
 router.post("/", requirePermission("follow_ups.create"), createFollowUpController);
 router.get("/", requirePermission("follow_ups.view"), listFollowUpsController);
 router.get("/upcoming", requirePermission("follow_ups.view"), getUpcomingFollowUpsController);
+router.post(
+  "/:id/messages",
+  requirePermission("follow_ups.create"),
+  scheduleFollowUpMessageController,
+);
+router.get(
+  "/:id/messages",
+  requirePermission("follow_ups.view"),
+  listFollowUpMessagesController,
+);
+router.patch(
+  "/messages/:messageId/cancel",
+  requirePermission("follow_ups.edit"),
+  cancelFollowUpMessageController,
+);
+
 router.get("/:id", requirePermission("follow_ups.view"), getFollowUpController);
 router.patch("/:id", requirePermission("follow_ups.edit"), updateFollowUpController);
 router.delete("/:id", requirePermission("follow_ups.delete"), deleteFollowUpController);

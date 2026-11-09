@@ -10,7 +10,7 @@ export const loginRateLimit = rateLimit({
   handler: (req, res) => {
     return res.status(429).json({
       success: false,
-      message: "Too many login attempts. Please try again in 15 minutes.",
+      message: "Too many sign-in attempts. Please wait 15 minutes before trying again.",
     });
   },
 });

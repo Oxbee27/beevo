@@ -79,11 +79,15 @@ app.use((req, res) => {
 // Central error handler
 app.use((error, req, res, next) => {
   console.error("Request error details:", {
-  name: error.name,
-  code: error.code,
-  message: error.message,
-  stack: error.stack,
-});;
+    name: error.name,
+    code: error.code,
+    message: error.message,
+    stack: error.stack,
+  });
+
+  if (res.headersSent) {
+    return next(error);
+  }
 
   const status =
     Number.isInteger(error.status) &&
@@ -92,12 +96,26 @@ app.use((error, req, res, next) => {
       ? error.status
       : 500;
 
-  res.status(status).json({
+  const friendlyMessages = {
+    400: "Some of the information you entered is incorrect. Please review it and try again.",
+    401: "The email or password you entered is incorrect. Please try again.",
+    403: "You don't have permission to perform this action. Please contact your business owner.",
+    404: "We couldn't find what you're looking for. Please refresh and try again.",
+    409: "This information is already in use. Please try different details.",
+    422: "Some information needs your attention. Please review it and try again.",
+    429: "You've made too many attempts. Please wait a little and try again.",
+  };
+
+  const message =
+    error.publicMessage ||
+    (status >= 500
+      ? "Something went wrong while processing your request. Please try again shortly."
+      : friendlyMessages[status] ||
+        "We couldn't complete your request. Please try again.");
+
+  return res.status(status).json({
     success: false,
-    message:
-      status === 500
-        ? "Internal server error."
-        : error.message,
+    message,
   });
 });
 

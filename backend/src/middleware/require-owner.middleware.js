@@ -15,14 +15,14 @@ export async function requireOwner(req, res, next) {
     if (result.rowCount === 0) {
       return res.status(401).json({
         success: false,
-        message: "Your account is no longer available.",
+        message: "Your account is currently unavailable. Please contact your business owner.",
       });
     }
 
     if (result.rows[0].role !== "owner") {
       return res.status(403).json({
         success: false,
-        message: "Only business owners can perform this action.",
+        message: "Only the business owner can perform this action.",
       });
     }
 
