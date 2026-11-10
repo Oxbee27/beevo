@@ -104,7 +104,10 @@ describe("Beevo follow-up email adapter", () => {
         subject: "Test",
         body: "Test body",
       }),
-    ).rejects.toThrow("Beevo could not deliver the email.");
+    ).rejects.toMatchObject({
+      message: "The email delivery outcome could not be confirmed.",
+      deliveryOutcome: "unknown",
+    });
   });
 
   it("rejects when the Resend configuration is missing", async () => {

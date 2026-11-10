@@ -4,6 +4,8 @@ import { processDueFollowUpMessages } from "../src/workers/follow-up-message.wor
 function createHarness({
   eligibleAfterClaim = true,
   failSuccessPersistence = false,
+  failAttemptUpdate = false,
+  noDueMessages = false,
 } = {}) {
   const message = {
     id: "101",
@@ -60,12 +62,10 @@ function createHarness({
 
       if (normalized.startsWith("SELECT m.* FROM follow_up_messages")) {
         return {
-          rows: [
-            {
-              ...state.message,
-            },
-          ],
-          rowCount: 1,
+          rows: noDueMessages
+            ? []
+            : [{ ...state.message }],
+          rowCount: noDueMessages ? 0 : 1,
         };
       }
 
@@ -89,6 +89,12 @@ function createHarness({
       }
 
       if (normalized.startsWith("UPDATE follow_up_messages")) {
+        if (normalized.includes("SET status = 'unknown'")) {
+          state.message.status = "unknown";
+          state.message.locked_by = null;
+          return { rows: [{ id: state.message.id }], rowCount: 1 };
+        }
+
         if (normalized.includes("SET status = 'sent'")) {
           if (failSuccessPersistence) {
             throw new Error("Simulated database persistence failure.");
@@ -121,9 +127,11 @@ function createHarness({
           state.attemptStatus = "sent";
         } else if (normalized.includes("SET status = 'failed'")) {
           state.attemptStatus = "failed";
+        } else if (normalized.includes("SET status = 'unknown'")) {
+          state.attemptStatus = "unknown";
         }
 
-        return { rows: [], rowCount: 1 };
+        return { rows: [], rowCount: failAttemptUpdate ? 0 : 1 };
       }
 
       throw new Error(`Unexpected test SQL: ${normalized}`);
@@ -135,9 +143,16 @@ function createHarness({
   const db = {
     connect: vi.fn(async () => client),
 
-    async query(sql) {
+    async query(sql, values = []) {
       const normalized = sql.replace(/\s+/g, " ").trim();
       state.queries.push(normalized);
+
+      if (
+        normalized.startsWith("UPDATE follow_up_messages") &&
+        normalized.includes("ANY($2)")
+      ) {
+        return { rows: (values[1] || []).map((id) => ({ id })), rowCount: (values[1] || []).length };
+      }
 
       if (normalized.includes("SELECT 1 FROM follow_ups")) {
         return {
@@ -188,9 +203,9 @@ describe("Beevo scheduled-message worker", () => {
   it("records a provider failure for retry without losing the message", async () => {
     const { db, state } = createHarness();
 
-    const sendEmail = vi.fn().mockRejectedValue(
-      new Error("Simulated provider rejection."),
-    );
+    const rejection = new Error("Simulated provider rejection.");
+    rejection.deliveryOutcome = "rejected";
+    const sendEmail = vi.fn().mockRejectedValue(rejection);
 
     const result = await processDueFollowUpMessages({
       db,
@@ -205,6 +220,26 @@ describe("Beevo scheduled-message worker", () => {
 
     expect(state.message.status).toBe("pending");
     expect(state.attemptStatus).toBe("failed");
+  });
+
+  it("marks an ambiguous network outcome unknown without retrying", async () => {
+    const { db, state } = createHarness();
+    const sendEmail = vi.fn().mockRejectedValue(
+      new Error("Simulated network timeout."),
+    );
+
+    const result = await processDueFollowUpMessages({
+      db,
+      workerId: "test-worker",
+      sendEmail,
+    });
+
+    expect(result.results).toEqual([{ id: "101", status: "unknown" }]);
+    expect(state.message.status).toBe("unknown");
+    expect(state.attemptStatus).toBe("unknown");
+    expect(
+      state.queries.some((query) => query.includes("SET status = CASE")),
+    ).toBe(false);
   });
 
   it("cancels a message when eligibility is withdrawn after claiming", async () => {
@@ -262,4 +297,87 @@ describe("Beevo scheduled-message worker", () => {
 
     expect(retryQueries).toHaveLength(0);
   });
+
+  it("renews message locks while a provider request is running", async () => {
+    const { db, state } = createHarness();
+
+    const sendEmail = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      return {
+        provider: "resend",
+        providerMessageId: "resend-heartbeat-101",
+      };
+    });
+
+    const result = await processDueFollowUpMessages({
+      db,
+      workerId: "heartbeat-test-worker",
+      sendEmail,
+      heartbeatIntervalMs: 1000,
+    });
+
+    expect(result.results).toEqual([{ id: "101", status: "sent" }]);
+    expect(
+      state.queries.some(
+        (query) =>
+          query.includes("SET locked_at = NOW()") &&
+          query.includes("ANY($2)"),
+      ),
+    ).toBe(true);
+  });
+
+  it("rolls back when the delivery-attempt record cannot be updated", async () => {
+    const { db, state } = createHarness({
+      failAttemptUpdate: true,
+    });
+
+    const sendEmail = vi.fn().mockResolvedValue({
+      provider: "resend",
+      providerMessageId: "resend-attempt-test-101",
+    });
+
+    const result = await processDueFollowUpMessages({
+      db,
+      workerId: "attempt-record-test-worker",
+      sendEmail,
+    });
+
+    expect(sendEmail).toHaveBeenCalledOnce();
+    expect(result.results).toEqual([
+      { id: "101", status: "delivery_result_unknown" },
+    ]);
+    expect(state.queries).toContain("ROLLBACK");
+  });
+
+  it("marks abandoned processing messages as unknown without retrying", async () => {
+    const { db, state } = createHarness({ noDueMessages: true });
+    const sendEmail = vi.fn();
+
+    const result = await processDueFollowUpMessages({
+      db,
+      workerId: "recovery-test-worker",
+      sendEmail,
+    });
+
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(result).toEqual({ processed: 0, results: [] });
+
+    const staleAttemptQuery = state.queries.find(
+      (query) => query.includes("UPDATE message_delivery_attempts a"),
+    );
+
+    const staleMessageQuery = state.queries.find(
+      (query) =>
+        query.includes("UPDATE follow_up_messages") &&
+        query.includes("INTERVAL '10 minutes'"),
+    );
+
+    expect(staleAttemptQuery).toContain("SET status = 'unknown'");
+    expect(staleAttemptQuery).toContain("provider outcome is unknown");
+
+    expect(staleMessageQuery).toContain("SET status = 'unknown'");
+    expect(staleMessageQuery).toContain("INTERVAL '10 minutes'");
+    expect(staleMessageQuery).not.toContain("next_attempt_at = NOW()");
+  });
+
 });

@@ -180,6 +180,7 @@ async function canSendMessage(db, message) {
   return result.rowCount > 0;
 }
 
+
 async function completeWithoutSending(db, message, workerId) {
   const client = await db.connect();
 
@@ -194,10 +195,8 @@ async function completeWithoutSending(db, message, workerId) {
             locked_at = NULL,
             locked_by = NULL,
             updated_at = NOW()
-        WHERE business_id = $1
-          AND id = $2
-          AND status = 'processing'
-          AND locked_by = $3
+        WHERE business_id = $1 AND id = $2
+          AND status = 'processing' AND locked_by = $3
         RETURNING id
       `,
       [message.business_id, message.id, workerId],
@@ -207,19 +206,21 @@ async function completeWithoutSending(db, message, workerId) {
       throw new Error("The worker no longer owns this message.");
     }
 
-    await client.query(
+    const attemptUpdated = await client.query(
       `
         UPDATE message_delivery_attempts
         SET status = 'failed',
             error_message = 'Message was not sent because consent or follow-up eligibility is no longer valid.',
             attempted_at = NOW()
-        WHERE business_id = $1
-          AND message_id = $2
-          AND attempt_number = $3
-          AND status = 'processing'
+        WHERE business_id = $1 AND message_id = $2
+          AND attempt_number = $3 AND status = 'processing'
       `,
       [message.business_id, message.id, message.attempt_count],
     );
+
+    if (attemptUpdated.rowCount !== 1) {
+      throw new Error("Beevo could not confirm the delivery-attempt record.");
+    }
 
     await client.query("COMMIT");
   } catch (error) {
@@ -229,6 +230,8 @@ async function completeWithoutSending(db, message, workerId) {
     client.release();
   }
 }
+
+
 
 async function completeSuccessfulDelivery(db, message, workerId, delivery) {
   const client = await db.connect();
@@ -247,10 +250,8 @@ async function completeSuccessfulDelivery(db, message, workerId, delivery) {
             locked_at = NULL,
             locked_by = NULL,
             updated_at = NOW()
-        WHERE business_id = $1
-          AND id = $2
-          AND status = 'processing'
-          AND locked_by = $3
+        WHERE business_id = $1 AND id = $2
+          AND status = 'processing' AND locked_by = $3
         RETURNING id
       `,
       [
@@ -268,16 +269,14 @@ async function completeSuccessfulDelivery(db, message, workerId, delivery) {
       );
     }
 
-    await client.query(
+    const attemptUpdated = await client.query(
       `
         UPDATE message_delivery_attempts
         SET status = 'sent',
             provider_message_id = $4,
             attempted_at = NOW()
-        WHERE business_id = $1
-          AND message_id = $2
-          AND attempt_number = $3
-          AND status = 'processing'
+        WHERE business_id = $1 AND message_id = $2
+          AND attempt_number = $3 AND status = 'processing'
       `,
       [
         message.business_id,
@@ -287,6 +286,10 @@ async function completeSuccessfulDelivery(db, message, workerId, delivery) {
       ],
     );
 
+    if (attemptUpdated.rowCount !== 1) {
+      throw new Error("Beevo could not confirm the delivery-attempt record.");
+    }
+
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
@@ -295,6 +298,8 @@ async function completeSuccessfulDelivery(db, message, workerId, delivery) {
     client.release();
   }
 }
+
+
 
 async function recordFailedDelivery(db, message, workerId, error) {
   const client = await db.connect();
@@ -323,10 +328,8 @@ async function recordFailedDelivery(db, message, workerId, error) {
             locked_at = NULL,
             locked_by = NULL,
             updated_at = NOW()
-        WHERE business_id = $1
-          AND id = $2
-          AND status = 'processing'
-          AND locked_by = $3
+        WHERE business_id = $1 AND id = $2
+          AND status = 'processing' AND locked_by = $3
         RETURNING id
       `,
       [
@@ -342,16 +345,14 @@ async function recordFailedDelivery(db, message, workerId, error) {
       throw new Error("The worker no longer owns this message.");
     }
 
-    await client.query(
+    const attemptUpdated = await client.query(
       `
         UPDATE message_delivery_attempts
         SET status = 'failed',
             error_message = $4,
             attempted_at = NOW()
-        WHERE business_id = $1
-          AND message_id = $2
-          AND attempt_number = $3
-          AND status = 'processing'
+        WHERE business_id = $1 AND message_id = $2
+          AND attempt_number = $3 AND status = 'processing'
       `,
       [
         message.business_id,
@@ -360,6 +361,10 @@ async function recordFailedDelivery(db, message, workerId, error) {
         safeError,
       ],
     );
+
+    if (attemptUpdated.rowCount !== 1) {
+      throw new Error("Beevo could not confirm the delivery-attempt record.");
+    }
 
     await client.query("COMMIT");
   } catch (error) {
@@ -370,115 +375,203 @@ async function recordFailedDelivery(db, message, workerId, error) {
   }
 }
 
+
+
+async function recordUnknownDelivery(db, message, workerId, error) {
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const safeError = String(
+      error?.message || "The email delivery outcome could not be confirmed.",
+    ).slice(0, 1000);
+
+    const updated = await client.query(
+      `
+        UPDATE follow_up_messages
+        SET status = 'unknown',
+            last_error = $4,
+            locked_at = NULL,
+            locked_by = NULL,
+            updated_at = NOW()
+        WHERE business_id = $1 AND id = $2
+          AND status = 'processing' AND locked_by = $3
+        RETURNING id
+      `,
+      [message.business_id, message.id, workerId, safeError],
+    );
+
+    if (updated.rowCount !== 1) {
+      throw new Error("The worker no longer owns this message.");
+    }
+
+    const attemptUpdated = await client.query(
+      `
+        UPDATE message_delivery_attempts
+        SET status = 'unknown',
+            error_message = $4,
+            attempted_at = NOW()
+        WHERE business_id = $1 AND message_id = $2
+          AND attempt_number = $3 AND status = 'processing'
+      `,
+      [
+        message.business_id,
+        message.id,
+        message.attempt_count,
+        safeError,
+      ],
+    );
+
+    if (attemptUpdated.rowCount !== 1) {
+      throw new Error("Beevo could not confirm the delivery-attempt record.");
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function renewMessageLocks(db, workerId, activeIds) {
+  if (activeIds.size === 0) return;
+
+  const ids = [...activeIds];
+
+  const result = await db.query(
+    `
+      UPDATE follow_up_messages
+      SET locked_at = NOW(),
+          updated_at = NOW()
+      WHERE id = ANY($2)
+        AND status = 'processing'
+        AND locked_by = $1
+      RETURNING id
+    `,
+    [workerId, ids],
+  );
+
+  const renewed = new Set(result.rows.map((row) => String(row.id)));
+
+  for (const id of ids) {
+    if (!renewed.has(String(id))) {
+      throw new Error("The worker lost its delivery-message lock.");
+    }
+  }
+}
+
 export async function processDueFollowUpMessages({
   batchSize = 10,
   workerId = randomUUID(),
   sendEmail = sendFollowUpEmail,
   db = pool,
+  heartbeatIntervalMs = 60_000,
 } = {}) {
   const safeBatchSize = Math.max(
     1,
     Math.min(100, Math.floor(Number(batchSize) || 10)),
   );
 
-  const messages = await claimDueMessages(
-    db,
-    workerId,
-    safeBatchSize,
-  );
-
+  const messages = await claimDueMessages(db, workerId, safeBatchSize);
   const results = [];
+  const activeIds = new Set(messages.map((message) => String(message.id)));
 
-  for (const message of messages) {
-    // Database eligibility errors must not be treated as provider errors.
-    let eligible;
+  let heartbeatFailed = false;
+  let heartbeatInFlight = null;
 
-    try {
-      eligible = await canSendMessage(db, message);
-    } catch (error) {
-      console.error(
-        "Beevo could not verify message eligibility:",
-        error.message,
-      );
-      results.push({
-        id: message.id,
-        status: "eligibility_check_error",
-      });
-      continue;
-    }
+  const timer = messages.length
+    ? setInterval(() => {
+        if (heartbeatFailed || heartbeatInFlight || activeIds.size === 0) {
+          return;
+        }
 
-    if (!eligible) {
+        heartbeatInFlight = renewMessageLocks(db, workerId, activeIds)
+          .catch((error) => {
+            heartbeatFailed = true;
+            console.error("Beevo could not renew message locks:", error.message);
+          })
+          .finally(() => {
+            heartbeatInFlight = null;
+          });
+      }, Math.max(1000, Number(heartbeatIntervalMs) || 60_000))
+    : null;
+
+  try {
+    for (const message of messages) {
+      const id = String(message.id);
+
       try {
-        await completeWithoutSending(db, message, workerId);
-        results.push({ id: message.id, status: "cancelled" });
-      } catch (error) {
-        console.error(
-          "Beevo could not cancel an ineligible message:",
-          error.message,
-        );
-        results.push({ id: message.id, status: "database_error" });
+        if (heartbeatFailed) {
+          results.push({ id: message.id, status: "lease_lost" });
+          continue;
+        }
+
+        let eligible;
+
+        try {
+          eligible = await canSendMessage(db, message);
+        } catch (error) {
+          console.error("Beevo could not verify message eligibility:", error.message);
+          results.push({ id: message.id, status: "eligibility_check_error" });
+          continue;
+        }
+
+        if (!eligible) {
+          try {
+            await completeWithoutSending(db, message, workerId);
+            results.push({ id: message.id, status: "cancelled" });
+          } catch (error) {
+            console.error("Beevo could not cancel an ineligible message:", error.message);
+            results.push({ id: message.id, status: "database_error" });
+          }
+          continue;
+        }
+
+        let delivery;
+
+        try {
+          delivery = await sendEmail({
+            to: message.recipient,
+            subject: message.subject,
+            body: message.body,
+          });
+        } catch (providerError) {
+          try {
+            if (providerError?.deliveryOutcome === "rejected") {
+              await recordFailedDelivery(db, message, workerId, providerError);
+              results.push({ id: message.id, status: "retry_recorded" });
+            } else {
+              await recordUnknownDelivery(db, message, workerId, providerError);
+              results.push({ id: message.id, status: "unknown" });
+            }
+          } catch (databaseError) {
+            console.error("Beevo could not record the provider outcome:", databaseError.message);
+            results.push({ id: message.id, status: "database_error" });
+          }
+          continue;
+        }
+
+        try {
+          await completeSuccessfulDelivery(db, message, workerId, delivery);
+          results.push({ id: message.id, status: "sent" });
+        } catch (databaseError) {
+          console.error(
+            "Email provider accepted a message, but Beevo could not save its result:",
+            databaseError.message,
+          );
+          results.push({ id: message.id, status: "delivery_result_unknown" });
+        }
+      } finally {
+        activeIds.delete(id);
       }
-      continue;
     }
-
-    let delivery;
-
-    // Only errors from the provider call are recorded as delivery failures.
-    try {
-      delivery = await sendEmail({
-        to: message.recipient,
-        subject: message.subject,
-        body: message.body,
-      });
-    } catch (providerError) {
-      try {
-        await recordFailedDelivery(
-          db,
-          message,
-          workerId,
-          providerError,
-        );
-        results.push({
-          id: message.id,
-          status: "retry_recorded",
-        });
-      } catch (databaseError) {
-        console.error(
-          "Beevo could not record the provider failure:",
-          databaseError.message,
-        );
-        results.push({
-          id: message.id,
-          status: "database_error",
-        });
-      }
-      continue;
-    }
-
-    // If persistence fails after provider acceptance, do not classify it
-    // as a provider failure or immediately schedule another attempt.
-    try {
-      await completeSuccessfulDelivery(
-        db,
-        message,
-        workerId,
-        delivery,
-      );
-      results.push({ id: message.id, status: "sent" });
-    } catch (databaseError) {
-      console.error(
-        "Email provider accepted a message, but Beevo could not save its result:",
-        databaseError.message,
-      );
-      results.push({
-        id: message.id,
-        status: "delivery_result_unknown",
-      });
-    }
+  } finally {
+    if (timer) clearInterval(timer);
+    if (heartbeatInFlight) await heartbeatInFlight;
   }
 
-  return {
-    processed: messages.length,
-    results,
-  };
+  return { processed: messages.length, results };
 }

@@ -10,6 +10,7 @@ import followUpRoutes from "./routes/follow-up.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import roleRoutes from "./routes/role.routes.js";
 import staffRoutes from "./routes/staff.routes.js";
+import { handleResendWebhook } from "./controllers/resend-webhook.controller.js";
 
 
 
@@ -27,6 +28,13 @@ app.use(
   cors({
     origin: CORS_ORIGIN,
   }),
+);
+
+// Resend requires the original raw request body for signature verification.
+app.post(
+  "/webhooks/resend",
+  express.raw({ type: "application/json", limit: "1mb" }),
+  handleResendWebhook,
 );
 
 app.use(express.json({ limit: "1mb" }));
