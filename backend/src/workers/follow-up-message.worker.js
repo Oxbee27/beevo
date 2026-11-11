@@ -1,8 +1,15 @@
 import { randomUUID } from "node:crypto";
 import pool from "../config/database.js";
 import { sendFollowUpEmail } from "../utils/send-follow-up-email.js";
+import { sendFollowUpSms } from "../utils/send-follow-up-sms.js";
+import { sendFollowUpWhatsApp } from "../utils/send-follow-up-whatsapp.js";
+import { applyWhatsAppDeliveryStatus } from "../services/process-whatsapp-webhook.service.js";
+import {
+  applyTermiiDeliveryStatus,
+  nextTermiiMessageStatus,
+} from "../services/process-termii-webhook.service.js";
 
-async function claimDueMessages(db, workerId, batchSize) {
+async function claimDueMessages(db, workerId, batchSize, messageId = null) {
   const client = await db.connect();
 
   try {
@@ -21,9 +28,11 @@ async function claimDueMessages(db, workerId, batchSize) {
           AND m.id = a.message_id
           AND m.status = 'processing'
           AND m.locked_at < NOW() - INTERVAL '10 minutes'
+          AND ($1::BIGINT IS NULL OR m.id = $1)
           AND a.attempt_number = m.attempt_count
           AND a.status = 'processing'
       `,
+      [messageId],
     );
 
     await client.query(
@@ -36,7 +45,9 @@ async function claimDueMessages(db, workerId, batchSize) {
             updated_at = NOW()
         WHERE status = 'processing'
           AND locked_at < NOW() - INTERVAL '10 minutes'
+          AND ($1::BIGINT IS NULL OR id = $1)
       `,
+      [messageId],
     );
 
     // Cancel messages when consent has been withdrawn.
@@ -44,16 +55,15 @@ async function claimDueMessages(db, workerId, batchSize) {
       `
         UPDATE follow_up_messages m
         SET status = 'cancelled',
-            last_error = 'Email delivery skipped because customer consent is not granted.',
+            last_error = 'Message delivery skipped because customer consent is not granted.',
             updated_at = NOW()
         WHERE m.status = 'pending'
-          AND m.channel = 'email'
           AND NOT EXISTS (
             SELECT 1
             FROM customer_communication_preferences p
             WHERE p.business_id = m.business_id
               AND p.customer_id = m.customer_id
-              AND p.channel = 'email'
+              AND p.channel = m.channel
               AND p.consent_status = 'granted'
           )
       `,
@@ -67,6 +77,7 @@ async function claimDueMessages(db, workerId, batchSize) {
             last_error = 'Message cancelled because its follow-up is no longer pending.',
             updated_at = NOW()
         WHERE m.status = 'pending'
+          AND ($1::BIGINT IS NULL OR m.id = $1)
           AND EXISTS (
             SELECT 1
             FROM follow_ups f
@@ -75,6 +86,7 @@ async function claimDueMessages(db, workerId, batchSize) {
               AND f.status <> 'pending'
           )
       `,
+      [messageId],
     );
 
     const dueResult = await client.query(
@@ -84,21 +96,22 @@ async function claimDueMessages(db, workerId, batchSize) {
         INNER JOIN customer_communication_preferences p
           ON p.business_id = m.business_id
          AND p.customer_id = m.customer_id
-         AND p.channel = 'email'
+         AND p.channel = m.channel
          AND p.consent_status = 'granted'
         INNER JOIN follow_ups f
           ON f.business_id = m.business_id
          AND f.id = m.follow_up_id
          AND f.status = 'pending'
         WHERE m.status = 'pending'
-          AND m.channel = 'email'
+          AND m.channel IN ('email', 'sms', 'whatsapp')
+          AND ($2::BIGINT IS NULL OR m.id = $2)
           AND m.scheduled_for <= NOW()
           AND m.next_attempt_at <= NOW()
         ORDER BY m.next_attempt_at ASC, m.id ASC
         LIMIT $1
         FOR UPDATE OF m SKIP LOCKED
       `,
-      [batchSize],
+      [batchSize, messageId],
     );
 
     const claimed = [];
@@ -133,12 +146,21 @@ async function claimDueMessages(db, workerId, batchSize) {
             provider,
             status
           )
-          VALUES ($1, $2, $3, 'resend', 'processing')
+          VALUES (
+            $1, $2, $3,
+            CASE
+              WHEN $4 = 'sms' THEN 'termii'
+              WHEN $4 = 'whatsapp' THEN 'meta_whatsapp'
+              ELSE 'resend'
+            END,
+            'processing'
+          )
         `,
         [
           current.business_id,
           current.id,
           current.attempt_count,
+          current.channel,
         ],
       );
 
@@ -164,7 +186,7 @@ async function canSendMessage(db, message) {
       INNER JOIN customer_communication_preferences p
         ON p.business_id = f.business_id
        AND p.customer_id = $3
-       AND p.channel = 'email'
+       AND p.channel = $4
        AND p.consent_status = 'granted'
       WHERE f.business_id = $1
         AND f.id = $2
@@ -174,6 +196,7 @@ async function canSendMessage(db, message) {
       message.business_id,
       message.follow_up_id,
       message.customer_id,
+      message.channel,
     ],
   );
 
@@ -222,6 +245,7 @@ async function completeWithoutSending(db, message, workerId) {
       throw new Error("Beevo could not confirm the delivery-attempt record.");
     }
 
+
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
@@ -238,6 +262,21 @@ async function completeSuccessfulDelivery(db, message, workerId, delivery) {
 
   try {
     await client.query("BEGIN");
+
+    // Serialize provider-ID persistence with incoming Termii webhooks.
+    if (delivery.provider === "termii" && message.channel === "sms") {
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        [`termii:${delivery.providerMessageId}`],
+      );
+    }
+
+    if (delivery.provider === "meta_whatsapp" && message.channel === "whatsapp") {
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        [`whatsapp:${delivery.providerMessageId}`],
+      );
+    }
 
     const updated = await client.query(
       `
@@ -265,7 +304,7 @@ async function completeSuccessfulDelivery(db, message, workerId, delivery) {
 
     if (updated.rowCount !== 1) {
       throw new Error(
-        "Email was accepted, but Beevo could not confirm ownership of the message record.",
+        "The provider accepted the message, but Beevo could not confirm ownership of the message record.",
       );
     }
 
@@ -288,6 +327,116 @@ async function completeSuccessfulDelivery(db, message, workerId, delivery) {
 
     if (attemptUpdated.rowCount !== 1) {
       throw new Error("Beevo could not confirm the delivery-attempt record.");
+    }
+
+    // A Termii webhook may have arrived before the provider ID was saved.
+    // Process those events now, without depending on provider retries.
+    if (delivery.provider === "termii" && message.channel === "sms") {
+      const unmatchedEvents = await client.query(
+        `
+          SELECT id, event_status
+          FROM termii_webhook_events
+          WHERE provider_message_id = $1
+            AND processing_result = 'unmatched'
+          ORDER BY id
+          FOR UPDATE
+        `,
+        [delivery.providerMessageId],
+      );
+
+      let reconciledMessageStatus = "sent";
+
+      for (const event of unmatchedEvents.rows) {
+        const reconciliationResult = await applyTermiiDeliveryStatus(
+          client,
+          {
+            message: {
+              id: message.id,
+              business_id: message.business_id,
+              status: reconciledMessageStatus,
+            },
+            providerMessageId: delivery.providerMessageId,
+            rawStatus: event.event_status,
+          },
+        );
+
+        reconciledMessageStatus = nextTermiiMessageStatus(
+          reconciledMessageStatus,
+          event.event_status,
+          reconciliationResult,
+        );
+
+
+
+        await client.query(
+          `
+            UPDATE termii_webhook_events
+            SET processing_result = $2,
+                processed_at = NOW()
+            WHERE id = $1
+              AND processing_result = 'unmatched'
+          `,
+          [event.id, reconciliationResult],
+        );
+      }
+    }
+
+
+    // Reconcile Meta webhook events received before the wamid was persisted.
+    if (delivery.provider === "meta_whatsapp" && message.channel === "whatsapp") {
+      const unmatchedEvents = await client.query(
+        `
+          SELECT id, event_status, provider_event_at, error_message
+          FROM whatsapp_webhook_events
+          WHERE provider_message_id = $1
+            AND processing_result = 'unmatched'
+          ORDER BY provider_event_at ASC NULLS LAST, id ASC
+          FOR UPDATE
+        `,
+        [delivery.providerMessageId],
+      );
+
+      let reconciledMessage = {
+        id: message.id,
+        business_id: message.business_id,
+        status: "sent",
+        provider_event_at: null,
+      };
+
+      for (const event of unmatchedEvents.rows) {
+        const reconciliationResult = await applyWhatsAppDeliveryStatus(
+          client,
+          {
+            message: reconciledMessage,
+            providerMessageId: delivery.providerMessageId,
+            rawStatus: event.event_status,
+            providerEventAt: event.provider_event_at,
+            errorMessage: event.error_message,
+          },
+        );
+
+        if (reconciliationResult === "matched") {
+          const outcome = event.event_status === "failed"
+            ? "failed"
+            : ["delivered", "read"].includes(event.event_status)
+              ? "delivered"
+              : "sent";
+
+          reconciledMessage.status = outcome;
+          reconciledMessage.provider_event_at = event.provider_event_at;
+        }
+
+        await client.query(
+          `
+            UPDATE whatsapp_webhook_events
+            SET processing_result = $2,
+                processed_at = NOW()
+            WHERE id = $1
+              AND processing_result = 'unmatched'
+          `,
+          [event.id, reconciliationResult],
+        );
+      }
     }
 
     await client.query("COMMIT");
@@ -313,7 +462,7 @@ async function recordFailedDelivery(db, message, workerId, error) {
     );
 
     const safeError = String(
-      error?.message || "Email delivery failed.",
+      error?.message || "Message delivery failed.",
     ).slice(0, 1000);
 
     const updated = await client.query(
@@ -384,7 +533,7 @@ async function recordUnknownDelivery(db, message, workerId, error) {
     await client.query("BEGIN");
 
     const safeError = String(
-      error?.message || "The email delivery outcome could not be confirmed.",
+      error?.message || "The message delivery outcome could not be confirmed.",
     ).slice(0, 1000);
 
     const updated = await client.query(
@@ -467,15 +616,29 @@ export async function processDueFollowUpMessages({
   batchSize = 10,
   workerId = randomUUID(),
   sendEmail = sendFollowUpEmail,
+  sendSms = sendFollowUpSms,
+  sendWhatsApp = sendFollowUpWhatsApp,
+  messageId = null,
   db = pool,
   heartbeatIntervalMs = 60_000,
 } = {}) {
-  const safeBatchSize = Math.max(
-    1,
-    Math.min(100, Math.floor(Number(batchSize) || 10)),
-  );
+  const safeMessageId =
+    messageId === null || messageId === undefined
+      ? null
+      : Number.isSafeInteger(Number(messageId)) && Number(messageId) > 0
+        ? Number(messageId)
+        : (() => { throw new Error("A valid positive message ID is required."); })();
 
-  const messages = await claimDueMessages(db, workerId, safeBatchSize);
+  const safeBatchSize = safeMessageId
+    ? 1
+    : Math.max(1, Math.min(100, Math.floor(Number(batchSize) || 10)));
+
+  const messages = await claimDueMessages(
+    db,
+    workerId,
+    safeBatchSize,
+    safeMessageId,
+  );
   const results = [];
   const activeIds = new Set(messages.map((message) => String(message.id)));
 
@@ -533,11 +696,33 @@ export async function processDueFollowUpMessages({
         let delivery;
 
         try {
-          delivery = await sendEmail({
-            to: message.recipient,
-            subject: message.subject,
-            body: message.body,
-          });
+          if (message.channel === "sms") {
+            delivery = await sendSms({
+              to: message.recipient,
+              body: message.body,
+            });
+          } else if (message.channel === "whatsapp") {
+            if (!message.template_key) {
+              const error = new Error(
+                "An approved WhatsApp template is required.",
+              );
+              error.deliveryOutcome = "rejected";
+              throw error;
+            }
+
+            delivery = await sendWhatsApp({
+              to: message.recipient,
+              templateName: message.template_key,
+            });
+          } else if (message.channel === "email") {
+            delivery = await sendEmail({
+              to: message.recipient,
+              subject: message.subject,
+              body: message.body,
+            });
+          } else {
+            throw new Error("This message channel is not supported by the worker.");
+          }
         } catch (providerError) {
           try {
             if (providerError?.deliveryOutcome === "rejected") {
@@ -559,7 +744,7 @@ export async function processDueFollowUpMessages({
           results.push({ id: message.id, status: "sent" });
         } catch (databaseError) {
           console.error(
-            "Email provider accepted a message, but Beevo could not save its result:",
+            "Message provider accepted a message, but Beevo could not save its result:",
             databaseError.message,
           );
           results.push({ id: message.id, status: "delivery_result_unknown" });

@@ -6,15 +6,21 @@ function createHarness({
   failSuccessPersistence = false,
   failAttemptUpdate = false,
   noDueMessages = false,
+  channel = "email",
+  whatsappEvents = [],
 } = {}) {
   const message = {
     id: "101",
     business_id: "7",
     follow_up_id: "4",
     customer_id: "6",
-    recipient: "customer@example.com",
-    subject: "Checking in",
+    channel,
+    recipient: ["sms", "whatsapp"].includes(channel)
+      ? "+2348012345678"
+      : "customer@example.com",
+    subject: channel === "email" ? "Checking in" : null,
     body: "Thank you for your enquiry.",
+    template_key: channel === "whatsapp" ? "hello_world" : null,
     attempt_count: 0,
     max_attempts: 5,
     status: "pending",
@@ -23,6 +29,7 @@ function createHarness({
   const state = {
     message: { ...message },
     attemptStatus: null,
+    whatsappEvents: whatsappEvents.map((event) => ({ ...event })),
     queries: [],
   };
 
@@ -33,6 +40,37 @@ function createHarness({
 
       if (/^(BEGIN|COMMIT|ROLLBACK)$/i.test(normalized)) {
         return { rows: [], rowCount: null };
+      }
+
+      if (
+        normalized.startsWith("SELECT pg_advisory_xact_lock")
+      ) {
+        return { rows: [], rowCount: null };
+      }
+
+      if (normalized.startsWith("SELECT id, event_status, provider_event_at")) {
+        return {
+          rows: state.whatsappEvents.filter(
+            (event) => event.processing_result === "unmatched",
+          ),
+          rowCount: state.whatsappEvents.length,
+        };
+      }
+
+      if (normalized.startsWith("SELECT id, event_status")) {
+        return { rows: [], rowCount: 0 };
+      }
+
+      if (normalized.startsWith("UPDATE whatsapp_webhook_events")) {
+        const event = state.whatsappEvents.find(
+          (item) => String(item.id) === String(values[0]),
+        );
+        if (event) event.processing_result = values[1];
+        return { rows: [], rowCount: event ? 1 : 0 };
+      }
+
+      if (normalized.startsWith("UPDATE termii_webhook_events")) {
+        return { rows: [], rowCount: 1 };
       }
 
       if (normalized.includes("UPDATE message_delivery_attempts a")) {
@@ -88,6 +126,15 @@ function createHarness({
         return { rows: [], rowCount: 1 };
       }
 
+      if (
+        normalized.startsWith("UPDATE follow_up_messages") &&
+        normalized.includes("SET status = $3")
+      ) {
+        state.message.status = values[2];
+        state.message.provider_event_at = values[3];
+        return { rows: [{ id: state.message.id }], rowCount: 1 };
+      }
+
       if (normalized.startsWith("UPDATE follow_up_messages")) {
         if (normalized.includes("SET status = 'unknown'")) {
           state.message.status = "unknown";
@@ -120,6 +167,14 @@ function createHarness({
 
           return { rows: [{ id: state.message.id }], rowCount: 1 };
         }
+      }
+
+      if (
+        normalized.startsWith("UPDATE message_delivery_attempts") &&
+        normalized.includes("SET status = $3")
+      ) {
+        state.attemptStatus = values[2];
+        return { rows: [{ id: "attempt-101" }], rowCount: 1 };
       }
 
       if (normalized.startsWith("UPDATE message_delivery_attempts")) {
@@ -169,6 +224,43 @@ function createHarness({
 }
 
 describe("Beevo scheduled-message worker", () => {
+  it("sends an eligible SMS through Termii and records its provider message ID", async () => {
+    const { db, state } = createHarness({ channel: "sms" });
+
+    const sendSms = vi.fn().mockResolvedValue({
+      provider: "termii",
+      providerMessageId: "termii-test-101",
+    });
+    const sendEmail = vi.fn();
+
+    const result = await processDueFollowUpMessages({
+      db,
+      workerId: "sms-test-worker",
+      sendEmail,
+      sendSms,
+    });
+
+    expect(sendSms).toHaveBeenCalledOnce();
+    expect(sendSms).toHaveBeenCalledWith({
+      to: "+2348012345678",
+      body: "Thank you for your enquiry.",
+    });
+    expect(sendEmail).not.toHaveBeenCalled();
+
+    expect(result).toEqual({
+      processed: 1,
+      results: [{ id: "101", status: "sent" }],
+    });
+    expect(state.message.status).toBe("sent");
+    expect(state.message.provider_message_id).toBe("termii-test-101");
+    expect(state.attemptStatus).toBe("sent");
+    expect(
+      state.queries.some(
+        (query) => query.includes("CASE WHEN $4 = 'sms' THEN 'termii'"),
+      ),
+    ).toBe(true);
+  });
+
   it("sends an eligible email and records the provider message ID", async () => {
     const { db, state } = createHarness();
 
@@ -378,6 +470,107 @@ describe("Beevo scheduled-message worker", () => {
     expect(staleMessageQuery).toContain("SET status = 'unknown'");
     expect(staleMessageQuery).toContain("INTERVAL '10 minutes'");
     expect(staleMessageQuery).not.toContain("next_attempt_at = NOW()");
+  });
+
+
+  it("sends an eligible WhatsApp message using its approved template", async () => {
+    const { db, state } = createHarness({ channel: "whatsapp" });
+    const sendWhatsApp = vi.fn(async () => ({
+      provider: "meta_whatsapp",
+      providerMessageId: "wamid.worker-test-101",
+    }));
+
+    const result = await processDueFollowUpMessages({
+      db,
+      workerId: "whatsapp-worker-1",
+      sendWhatsApp,
+    });
+
+    expect(sendWhatsApp).toHaveBeenCalledWith({
+      to: "+2348012345678",
+      templateName: "hello_world",
+    });
+    expect(result.results).toEqual([
+      { id: "101", status: "sent" },
+    ]);
+    expect(state.message.provider_message_id).toBe("wamid.worker-test-101");
+    expect(state.attemptStatus).toBe("sent");
+    expect(state.queries.some((sql) =>
+      sql.includes("SELECT pg_advisory_xact_lock") &&
+      sql.includes("$1")
+    )).toBe(true);
+  });
+
+  it("reconciles an early delivered WhatsApp webhook after saving the provider ID", async () => {
+    const eventDate = new Date("2026-11-11T11:00:00.000Z");
+    const { db, state } = createHarness({
+      channel: "whatsapp",
+      whatsappEvents: [{
+        id: "501",
+        event_status: "delivered",
+        provider_event_at: eventDate,
+        error_message: null,
+        processing_result: "unmatched",
+      }],
+    });
+
+    const sendWhatsApp = vi.fn(async () => ({
+      provider: "meta_whatsapp",
+      providerMessageId: "wamid.early-delivered-101",
+    }));
+
+    const result = await processDueFollowUpMessages({
+      db,
+      workerId: "whatsapp-worker-2",
+      sendWhatsApp,
+    });
+
+    expect(result.results).toEqual([
+      { id: "101", status: "sent" },
+    ]);
+    expect(state.message.provider_message_id).toBe(
+      "wamid.early-delivered-101",
+    );
+    expect(state.message.status).toBe("delivered");
+    expect(state.message.provider_event_at).toEqual(eventDate);
+    expect(state.attemptStatus).toBe("sent");
+    expect(state.whatsappEvents[0].processing_result).toBe("matched");
+  });
+
+  it("reconciles an early failed WhatsApp webhook without retrying an accepted message", async () => {
+    const eventDate = new Date("2026-11-11T11:05:00.000Z");
+    const { db, state } = createHarness({
+      channel: "whatsapp",
+      whatsappEvents: [{
+        id: "502",
+        event_status: "failed",
+        provider_event_at: eventDate,
+        error_message: "Recipient is unavailable.",
+        processing_result: "unmatched",
+      }],
+    });
+
+    const sendWhatsApp = vi.fn(async () => ({
+      provider: "meta_whatsapp",
+      providerMessageId: "wamid.early-failed-101",
+    }));
+
+    const result = await processDueFollowUpMessages({
+      db,
+      workerId: "whatsapp-worker-3",
+      sendWhatsApp,
+    });
+
+    expect(sendWhatsApp).toHaveBeenCalledTimes(1);
+    expect(result.results).toEqual([
+      { id: "101", status: "sent" },
+    ]);
+    expect(state.message.status).toBe("failed");
+    expect(state.message.provider_message_id).toBe(
+      "wamid.early-failed-101",
+    );
+    expect(state.attemptStatus).toBe("failed");
+    expect(state.whatsappEvents[0].processing_result).toBe("matched");
   });
 
 });

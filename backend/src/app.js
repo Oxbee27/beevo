@@ -1,3 +1,4 @@
+import { verifyWhatsAppWebhook, handleWhatsAppWebhook } from "./controllers/whatsapp-webhook.controller.js";
 import "dotenv/config";
 import { authenticateToken } from "./middleware/auth.middleware.js";
 import express from "express";
@@ -11,6 +12,7 @@ import dashboardRoutes from "./routes/dashboard.routes.js";
 import roleRoutes from "./routes/role.routes.js";
 import staffRoutes from "./routes/staff.routes.js";
 import { handleResendWebhook } from "./controllers/resend-webhook.controller.js";
+import { handleTermiiWebhook } from "./controllers/termii-webhook.controller.js";
 
 
 
@@ -35,6 +37,21 @@ app.post(
   "/webhooks/resend",
   express.raw({ type: "application/json", limit: "1mb" }),
   handleResendWebhook,
+);
+
+// Termii also requires the original raw request body for signature verification.
+app.post(
+  "/webhooks/termii",
+  express.raw({ type: "application/json", limit: "1mb" }),
+  handleTermiiWebhook,
+);
+
+// Meta WhatsApp webhooks: GET verification and raw-body POST signature validation.
+app.get("/webhooks/whatsapp", verifyWhatsAppWebhook);
+app.post(
+  "/webhooks/whatsapp",
+  express.raw({ type: "application/json", limit: "1mb" }),
+  handleWhatsAppWebhook,
 );
 
 app.use(express.json({ limit: "1mb" }));
