@@ -88,17 +88,11 @@ export async function applyWhatsAppDeliveryStatus(
     `
       UPDATE message_delivery_attempts
       SET status = $3,
-          provider_message_id = $4,
           error_message = $5
-      WHERE id = (
-        SELECT id
-        FROM message_delivery_attempts
-        WHERE business_id = $1
-          AND message_id = $2
-          AND provider = 'meta_whatsapp'
-        ORDER BY attempt_number DESC
-        LIMIT 1
-      )
+      WHERE business_id = $1
+        AND message_id = $2
+        AND provider = 'meta_whatsapp'
+        AND provider_message_id = $4
         AND status IN ('processing', 'sent', 'unknown', 'failed')
       RETURNING id
     `,
@@ -182,17 +176,54 @@ export async function processWhatsAppWebhookEvent({ eventFingerprint, event }) {
       ],
     );
 
+    let eventData = {
+      providerMessageId,
+      rawStatus,
+      providerEventAt,
+      errorMessage,
+    };
+
     if (inserted.rowCount === 0) {
-      await client.query("COMMIT");
-      return { status: "duplicate" };
+      const existingEvent = await client.query(
+        `
+          SELECT
+            id,
+            provider_message_id,
+            event_status,
+            provider_event_at,
+            error_message,
+            processing_result
+          FROM whatsapp_webhook_events
+          WHERE event_fingerprint = $1
+          FOR UPDATE
+        `,
+        [eventFingerprint],
+      );
+
+      if (
+        existingEvent.rowCount !== 1 ||
+        existingEvent.rows[0].processing_result !== "unmatched"
+      ) {
+        await client.query("COMMIT");
+        return { status: "duplicate" };
+      }
+
+      const previous = existingEvent.rows[0];
+
+      eventData = {
+        providerMessageId: previous.provider_message_id,
+        rawStatus: normalizeStatus(previous.event_status),
+        providerEventAt: previous.provider_event_at,
+        errorMessage: previous.error_message,
+      };
     }
 
     let processingResult = "ignored";
 
     if (
-      providerMessageId &&
-      providerEventAt &&
-      statusOutcome(rawStatus)
+      eventData.providerMessageId &&
+      eventData.providerEventAt &&
+      statusOutcome(eventData.rawStatus)
     ) {
       const matched = await client.query(
         `
@@ -203,7 +234,7 @@ export async function processWhatsAppWebhookEvent({ eventFingerprint, event }) {
             AND provider_message_id = $1
           FOR UPDATE
         `,
-        [providerMessageId],
+        [eventData.providerMessageId],
       );
 
       if (matched.rowCount === 0) {
@@ -211,10 +242,10 @@ export async function processWhatsAppWebhookEvent({ eventFingerprint, event }) {
       } else {
         processingResult = await applyWhatsAppDeliveryStatus(client, {
           message: matched.rows[0],
-          providerMessageId,
-          rawStatus,
-          providerEventAt,
-          errorMessage,
+          providerMessageId: eventData.providerMessageId,
+          rawStatus: eventData.rawStatus,
+          providerEventAt: eventData.providerEventAt,
+          errorMessage: eventData.errorMessage,
         });
       }
     }

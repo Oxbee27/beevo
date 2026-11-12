@@ -3,6 +3,7 @@ import { processDueFollowUpMessages } from "../src/workers/follow-up-message.wor
 
 function createHarness({
   eligibleAfterClaim = true,
+  failEligibilityCheck = false,
   failSuccessPersistence = false,
   failAttemptUpdate = false,
   noDueMessages = false,
@@ -128,6 +129,22 @@ function createHarness({
 
       if (
         normalized.startsWith("UPDATE follow_up_messages") &&
+        normalized.includes("SET status = 'pending'") &&
+        normalized.includes("next_attempt_at = NOW() + INTERVAL '1 minute'") &&
+        normalized.includes("attempt_count = $5")
+      ) {
+        state.message.status = "pending";
+        state.message.last_error = values[3];
+        state.message.locked_by = null;
+        state.message.locked_at = null;
+        state.message.next_attempt_at = "scheduled";
+
+        // Keep attempt_count unchanged: this attempt is retained for auditing.
+        return { rows: [{ id: state.message.id }], rowCount: 1 };
+      }
+
+      if (
+        normalized.startsWith("UPDATE follow_up_messages") &&
         normalized.includes("SET status = $3")
       ) {
         state.message.status = values[2];
@@ -167,6 +184,11 @@ function createHarness({
 
           return { rows: [{ id: state.message.id }], rowCount: 1 };
         }
+      }
+
+      if (normalized.startsWith("DELETE FROM message_delivery_attempts")) {
+        state.attemptStatus = null;
+        return { rows: [], rowCount: 1 };
       }
 
       if (
@@ -210,6 +232,10 @@ function createHarness({
       }
 
       if (normalized.includes("SELECT 1 FROM follow_ups")) {
+        if (failEligibilityCheck) {
+          throw new Error("Simulated eligibility database failure.");
+        }
+
         return {
           rows: eligibleAfterClaim ? [{ "?column?": 1 }] : [],
           rowCount: eligibleAfterClaim ? 1 : 0,
@@ -332,6 +358,70 @@ describe("Beevo scheduled-message worker", () => {
     expect(
       state.queries.some((query) => query.includes("SET status = CASE")),
     ).toBe(false);
+  });
+
+  it("releases a claimed message when the eligibility database check fails", async () => {
+    const { db, state } = createHarness({
+      failEligibilityCheck: true,
+    });
+
+    const sendEmail = vi.fn();
+    const sendSms = vi.fn();
+    const sendWhatsApp = vi.fn();
+
+    const result = await processDueFollowUpMessages({
+      db,
+      workerId: "eligibility-error-test-worker",
+      sendEmail,
+      sendSms,
+      sendWhatsApp,
+    });
+
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(sendWhatsApp).not.toHaveBeenCalled();
+
+    expect(result).toEqual({
+      processed: 1,
+      results: [{ id: "101", status: "eligibility_check_error" }],
+    });
+
+    expect(state.message.status).toBe("pending");
+    expect(state.message.attempt_count).toBe(1);
+    expect(state.message.locked_by).toBeNull();
+    expect(state.message.locked_at).toBeNull();
+    expect(state.message.next_attempt_at).toBe("scheduled");
+    expect(state.attemptStatus).toBe("failed");
+
+    const messageRecoveryQuery = state.queries.find(
+      (query) =>
+        query.includes("UPDATE follow_up_messages") &&
+        query.includes("next_attempt_at"),
+    );
+
+    expect(messageRecoveryQuery).toBeDefined();
+    expect(messageRecoveryQuery).not.toContain(
+      "GREATEST(attempt_count - 1, 0)",
+    );
+
+    const attemptRecoveryQuery = state.queries.find(
+      (query) =>
+        query.startsWith("UPDATE message_delivery_attempts") &&
+        query.includes("attempt_number = $3") &&
+        query.includes("SET status = 'failed'") &&
+        query.includes("error_message = $4"),
+    );
+
+    expect(attemptRecoveryQuery).toBeDefined();
+    expect(attemptRecoveryQuery).toContain("SET status = 'failed'");
+    expect(
+      state.queries.some(
+        (query) => query.startsWith("DELETE FROM message_delivery_attempts"),
+      ),
+    ).toBe(false);
+
+    expect(state.queries).toContain("COMMIT");
+    expect(state.queries).not.toContain("ROLLBACK");
   });
 
   it("cancels a message when eligibility is withdrawn after claiming", async () => {

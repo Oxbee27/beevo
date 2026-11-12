@@ -78,7 +78,12 @@ describe("WhatsApp webhook endpoint", () => {
       .send(rawBody);
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ success: true, processed: 1 });
+    expect(response.body).toEqual({
+      success: true,
+      processed: 1,
+      statusesProcessed: 1,
+      inboundProcessed: 0,
+    });
     expect(processEvent).toHaveBeenCalledWith({
       eventFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
       event: {

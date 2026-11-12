@@ -2,6 +2,9 @@ import { createHmac, createHash, timingSafeEqual } from "node:crypto";
 import {
   processWhatsAppWebhookEvent,
 } from "../services/process-whatsapp-webhook.service.js";
+import {
+  processWhatsAppInboundMessage,
+} from "../services/process-whatsapp-inbound-message.service.js";
 
 function safeEqual(left, right) {
   if (typeof left !== "string" || typeof right !== "string") return false;
@@ -51,6 +54,85 @@ export function isValidWhatsAppSignature(rawBody, signature, appSecret) {
   return safeEqual(signature, expected);
 }
 
+function extractInboundBody(message) {
+  switch (message?.type) {
+    case "text":
+      return message.text?.body ?? null;
+
+    case "button":
+      return message.button?.text ?? null;
+
+    case "interactive":
+      return (
+        message.interactive?.button_reply?.title ??
+        message.interactive?.list_reply?.title ??
+        null
+      );
+
+    case "image":
+    case "document":
+    case "video":
+      return message[message.type]?.caption ?? null;
+
+    case "location":
+      return (
+        message.location?.name ??
+        message.location?.address ??
+        null
+      );
+
+    default:
+      return null;
+  }
+}
+
+function extractReceivedAt(timestamp) {
+  if (timestamp === undefined || timestamp === null) return undefined;
+
+  const seconds = Number(timestamp);
+
+  if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+
+  const date = new Date(seconds * 1000);
+
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+async function processInboundMessages(value) {
+  const messages = value?.messages;
+  if (!Array.isArray(messages)) return 0;
+
+  const phoneNumberId = value?.metadata?.phone_number_id;
+  const contacts = Array.isArray(value?.contacts) ? value.contacts : [];
+
+  const contactsByWaId = new Map(
+    contacts
+      .filter((contact) => contact?.wa_id)
+      .map((contact) => [
+        String(contact.wa_id),
+        contact.profile?.name ?? null,
+      ]),
+  );
+
+  let processed = 0;
+
+  for (const message of messages) {
+    await processWhatsAppInboundMessage({
+      phoneNumberId,
+      contactIdentifier: message?.from,
+      contactDisplayName: contactsByWaId.get(String(message?.from)) ?? null,
+      providerMessageId: message?.id,
+      messageType: message?.type,
+      body: extractInboundBody(message),
+      receivedAt: extractReceivedAt(message?.timestamp),
+    });
+
+    processed += 1;
+  }
+
+  return processed;
+}
+
 export async function handleWhatsAppWebhook(req, res) {
   const appSecret = process.env.WHATSAPP_APP_SECRET;
 
@@ -93,32 +175,39 @@ export async function handleWhatsAppWebhook(req, res) {
   }
 
   try {
-    const results = [];
+    let statusesProcessed = 0;
+    let inboundProcessed = 0;
 
     for (const entry of payload.entry) {
-      for (const change of entry?.changes || []) {
-        const statuses = change?.value?.statuses;
+      const changes = Array.isArray(entry?.changes) ? entry.changes : [];
 
-        if (!Array.isArray(statuses)) continue;
+      for (const change of changes) {
+        const value = change?.value;
 
-        for (const status of statuses) {
-          const fingerprint = createHash("sha256")
-            .update(JSON.stringify(status))
-            .digest("hex");
+        if (Array.isArray(value?.statuses)) {
+          for (const status of value.statuses) {
+            const fingerprint = createHash("sha256")
+              .update(JSON.stringify(status))
+              .digest("hex");
 
-          const result = await processWhatsAppWebhookEvent({
-            eventFingerprint: fingerprint,
-            event: status,
-          });
+            await processWhatsAppWebhookEvent({
+              eventFingerprint: fingerprint,
+              event: status,
+            });
 
-          results.push(result.status);
+            statusesProcessed += 1;
+          }
         }
+
+        inboundProcessed += await processInboundMessages(value);
       }
     }
 
     return res.status(200).json({
       success: true,
-      processed: results.length,
+      processed: statusesProcessed + inboundProcessed,
+      statusesProcessed,
+      inboundProcessed,
     });
   } catch (error) {
     console.error("WhatsApp webhook processing failed:", error.message);

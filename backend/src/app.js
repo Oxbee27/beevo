@@ -16,6 +16,8 @@ import { handleTermiiWebhook } from "./controllers/termii-webhook.controller.js"
 
 
 
+import communicationsRoutes from "./routes/communications.routes.js";
+import conversationsRoutes from "./routes/conversations.routes.js";
 const app = express();
 
 // Trust Render's reverse proxy (one hop).
@@ -90,6 +92,8 @@ app.get("/auth/me", authenticateToken, (req, res) => {
 });
 
 app.use("/enquiries", enquiryRoutes);
+app.use("/communications", communicationsRoutes);
+app.use("/conversations", conversationsRoutes);
 app.use("/follow-ups", followUpRoutes);
 app.use("/dashboard", dashboardRoutes);
 

@@ -16,6 +16,7 @@ const fingerprint = "b".repeat(64);
 
 function createHarness({
   duplicate = false,
+  duplicateProcessingResult = "matched",
   message = {
     id: "101",
     business_id: "7",
@@ -43,6 +44,22 @@ function createHarness({
         return {
           rows: duplicate ? [] : [{ id: "1" }],
           rowCount: duplicate ? 0 : 1,
+        };
+      }
+
+      if (normalized.startsWith("SELECT id, provider_message_id")) {
+        return {
+          rows: duplicate
+            ? [{
+                id: "1",
+                provider_message_id: "wamid.test-101",
+                event_status: "delivered",
+                provider_event_at: new Date(1794400000000),
+                error_message: null,
+                processing_result: duplicateProcessingResult,
+              }]
+            : [],
+          rowCount: duplicate ? 1 : 0,
         };
       }
 
@@ -102,10 +119,19 @@ describe("WhatsApp webhook event processor", () => {
       sql.startsWith("UPDATE follow_up_messages") &&
       values[2] === "delivered"
     )).toBe(true);
-    expect(calls.some(({ sql, values }) =>
-      sql.startsWith("UPDATE message_delivery_attempts") &&
-      values[2] === "sent"
-    )).toBe(true);
+    const attemptUpdate = calls.find(({ sql }) =>
+      sql.startsWith("UPDATE message_delivery_attempts")
+    );
+
+    expect(attemptUpdate).toBeDefined();
+    expect(attemptUpdate.sql).toContain(
+      "provider_message_id = $4"
+    );
+    expect(attemptUpdate.values[0]).toBe("7");
+    expect(attemptUpdate.values[1]).toBe("101");
+    expect(attemptUpdate.values[2]).toBe("sent");
+    expect(attemptUpdate.values[3]).toBe("wamid.test-101");
+
     expect(client.release).toHaveBeenCalledOnce();
   });
 
@@ -219,6 +245,56 @@ describe("WhatsApp webhook event processor", () => {
     )).toBe(false);
   });
 
+  it("retries a previously unmatched event when its message becomes available", async () => {
+    const { calls } = createHarness({
+      duplicate: true,
+      duplicateProcessingResult: "unmatched",
+    });
+
+    const result = await processWhatsAppWebhookEvent({
+      eventFingerprint: fingerprint,
+      event: event(),
+    });
+
+    expect(result).toEqual({ status: "matched" });
+
+    expect(calls.some(({ sql }) =>
+      sql.startsWith("SELECT id, provider_message_id")
+    )).toBe(true);
+
+    expect(calls.some(({ sql }) =>
+      sql.startsWith("SELECT id, business_id, status")
+    )).toBe(true);
+
+    const auditUpdate = calls.find(({ sql }) =>
+      sql.startsWith("UPDATE whatsapp_webhook_events")
+    );
+
+    expect(auditUpdate).toBeDefined();
+    expect(auditUpdate.values).toEqual([fingerprint, "matched"]);
+  });
+
+  it("keeps a retried event unmatched when its message is still unavailable", async () => {
+    const { calls } = createHarness({
+      duplicate: true,
+      duplicateProcessingResult: "unmatched",
+      message: null,
+    });
+
+    const result = await processWhatsAppWebhookEvent({
+      eventFingerprint: fingerprint,
+      event: event(),
+    });
+
+    expect(result).toEqual({ status: "unmatched" });
+
+    const auditUpdate = calls.find(({ sql }) =>
+      sql.startsWith("UPDATE whatsapp_webhook_events")
+    );
+
+    expect(auditUpdate.values).toEqual([fingerprint, "unmatched"]);
+  });
+
   it("records unmatched provider message IDs", async () => {
     createHarness({ message: null });
 
@@ -258,7 +334,7 @@ describe("WhatsApp webhook event processor", () => {
     )).toBe(false);
   });
 
-  it("rolls back when the matching attempt cannot be updated", async () => {
+  it("rolls back when no delivery attempt matches the exact provider message ID", async () => {
     const { calls } = createHarness({ failAttemptUpdate: true });
 
     await expect(processWhatsAppWebhookEvent({
@@ -267,6 +343,16 @@ describe("WhatsApp webhook event processor", () => {
     })).rejects.toThrow(
       "Could not update the matching WhatsApp delivery attempt.",
     );
+
+    const attemptUpdate = calls.find(({ sql }) =>
+      sql.startsWith("UPDATE message_delivery_attempts")
+    );
+
+    expect(attemptUpdate).toBeDefined();
+    expect(attemptUpdate.sql).toContain(
+      "provider_message_id = $4"
+    );
+    expect(attemptUpdate.values[3]).toBe("wamid.test-101");
 
     expect(calls.some(({ sql }) => sql === "ROLLBACK")).toBe(true);
     expect(calls.some(({ sql }) => sql === "COMMIT")).toBe(false);

@@ -204,6 +204,89 @@ async function canSendMessage(db, message) {
 }
 
 
+
+// Eligibility is checked before contacting the provider.
+// Preserve the allocated attempt as a failed preflight attempt for auditing.
+async function releaseAfterEligibilityCheckError(
+  db,
+  message,
+  workerId,
+  error,
+) {
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const safeError = String(
+      error?.message || "Beevo could not verify message eligibility.",
+    ).slice(0, 1000);
+
+    const updated = await client.query(
+      `
+        UPDATE follow_up_messages
+        SET status = 'pending',
+            next_attempt_at = NOW() + INTERVAL '1 minute',
+            last_error = $4,
+            locked_at = NULL,
+            locked_by = NULL,
+            updated_at = NOW()
+        WHERE business_id = $1
+          AND id = $2
+          AND status = 'processing'
+          AND locked_by = $3
+          AND attempt_count = $5
+        RETURNING id
+      `,
+      [
+        message.business_id,
+        message.id,
+        workerId,
+        safeError,
+        message.attempt_count,
+      ],
+    );
+
+    if (updated.rowCount !== 1) {
+      throw new Error(
+        "The worker no longer owns this message or its attempt count changed.",
+      );
+    }
+
+    const attemptUpdated = await client.query(
+      `
+        UPDATE message_delivery_attempts
+        SET status = 'failed',
+            error_message = $4
+        WHERE business_id = $1
+          AND message_id = $2
+          AND attempt_number = $3
+          AND status = 'processing'
+        RETURNING id
+      `,
+      [
+        message.business_id,
+        message.id,
+        message.attempt_count,
+        safeError,
+      ],
+    );
+
+    if (attemptUpdated.rowCount !== 1) {
+      throw new Error(
+        "Beevo could not record the failed eligibility-check attempt.",
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function completeWithoutSending(db, message, workerId) {
   const client = await db.connect();
 
@@ -677,8 +760,33 @@ export async function processDueFollowUpMessages({
         try {
           eligible = await canSendMessage(db, message);
         } catch (error) {
-          console.error("Beevo could not verify message eligibility:", error.message);
-          results.push({ id: message.id, status: "eligibility_check_error" });
+          console.error(
+            "Beevo could not verify message eligibility:",
+            error.message,
+          );
+
+          try {
+            await releaseAfterEligibilityCheckError(
+              db,
+              message,
+              workerId,
+              error,
+            );
+            results.push({
+              id: message.id,
+              status: "eligibility_check_error",
+            });
+          } catch (recoveryError) {
+            console.error(
+              "Beevo could not release a message after its eligibility check failed:",
+              recoveryError.message,
+            );
+            results.push({
+              id: message.id,
+              status: "database_error",
+            });
+          }
+
           continue;
         }
 
