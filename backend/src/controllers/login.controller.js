@@ -4,33 +4,76 @@ import { generateToken } from "../utils/generate-token.js";
 
 export async function loginController(req, res, next) {
   try {
-    const validation = loginSchema.safeParse(req.body);
+    const email = req.body?.email;
+    const password = req.body?.password;
 
-    if (!validation.success) {
+    if (!email || !String(email).trim()) {
       return res.status(400).json({
         success: false,
-        message: "We couldn't sign you in. Please check your email and password.",
-        errors: validation.error.issues.map((issue) => ({
-          field: issue.path.join("."),
-          message: issue.message,
-        })),
+        message: "Please enter your email address.",
+        errors: { email: "Email address is required." },
+      });
+    }
+
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter your password.",
+        errors: { password: "Password is required." },
+      });
+    }
+
+    const validation = loginSchema.safeParse({ email, password });
+
+    if (!validation.success) {
+      const emailIssue = validation.error.issues.find(
+        issue => issue.path[0] === "email"
+      );
+
+      if (emailIssue) {
+        return res.status(400).json({
+          success: false,
+          message: "The email address you entered is invalid.",
+          errors: { email: "Please enter a valid email address." },
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: "The password you entered is invalid.",
+        errors: { password: "Please check your password." },
       });
     }
 
     const user = await loginUser(validation.data);
     const token = generateToken(user);
-
     const { token_version, ...publicUser } = user;
 
     return res.status(200).json({
       success: true,
       message: "Login successful.",
-      data: {
-        user: publicUser,
-        token,
-      },
+      data: { user: publicUser, token },
     });
   } catch (error) {
-    next(error);
+    if (error.publicMessage) {
+      const field = error.field;
+
+      return res.status(error.status || 401).json({
+        success: false,
+        message: error.publicMessage,
+        ...(field
+          ? {
+              errors: {
+                [field]:
+                  field === "email"
+                    ? "Please check your email address and try again."
+                    : "Please check your password and try again."
+              }
+            }
+          : {})
+      });
+    }
+
+    return next(error);
   }
 }

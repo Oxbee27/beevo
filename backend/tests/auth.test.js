@@ -11,7 +11,7 @@ describe("Beevo authentication", () => {
 
     expect(response.status).toBe(400);
     expect(response.body.success).toBe(false);
-    expect(response.body.message).toBe("We couldn't sign you in. Please check your email and password.");
+    expect(response.body.message).toBe("Please enter your email address.");
   });
 
   it("should reject login when password is missing", async () => {
@@ -21,7 +21,7 @@ describe("Beevo authentication", () => {
 
     expect(response.status).toBe(400);
     expect(response.body.success).toBe(false);
-    expect(response.body.message).toBe("We couldn't sign you in. Please check your email and password.");
+    expect(response.body.message).toBe("Please enter your password.");
   });
 
   it("should reject an invalid email format", async () => {

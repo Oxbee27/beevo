@@ -41,11 +41,20 @@ describe("Beevo login behaviour", () => {
   });
 
   it.each([
-    ["incorrect password", "test@example.com"],
-    ["unknown email", "unknown@example.com"],
-  ])("should reject login for %s", async (_scenario, email) => {
-    const error = new Error("The email or password you entered is incorrect. Please try again.");
+    [
+      "unknown email",
+      "unknown@example.com",
+      "This email address is not registered. Please check the email and try again.",
+    ],
+    [
+      "incorrect password",
+      "test@example.com",
+      "The password you entered is incorrect. Please try again.",
+    ],
+  ])("should return the correct message for %s", async (_scenario, email, message) => {
+    const error = new Error(message);
     error.status = 401;
+    error.publicMessage = message;
     mockLoginUser.mockRejectedValue(error);
 
     const response = await request(app)
@@ -57,6 +66,26 @@ describe("Beevo login behaviour", () => {
 
     expect(response.status).toBe(401);
     expect(response.body.success).toBe(false);
-    expect(response.body.message).toBe("The email or password you entered is incorrect. Please try again.");
+    expect(response.body.message).toBe(message);
+  });
+
+  it("should return a separate message for inactive accounts", async () => {
+    const message =
+      "This account is currently inactive. Please contact your business administrator.";
+    const error = new Error("User account is inactive.");
+    error.status = 403;
+    error.publicMessage = message;
+    mockLoginUser.mockRejectedValue(error);
+
+    const response = await request(app)
+      .post("/auth/login")
+      .send({
+        email: "test@example.com",
+        password: "ExamplePass@123",
+      });
+
+    expect(response.status).toBe(403);
+    expect(response.body.success).toBe(false);
+    expect(response.body.message).toBe(message);
   });
 });

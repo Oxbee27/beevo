@@ -25,10 +25,19 @@ export async function loginUser({ email, password }) {
   const user = result.rows[0];
 
   if (!user) {
-    const error = new Error("Invalid email or password.");
+    const error = new Error("Email address not found.");
     error.status = 401;
     error.publicMessage =
-      "The email or password you entered is incorrect. Please try again.";
+      "The email address you entered is incorrect.";
+    error.field = "email";
+    throw error;
+  }
+
+  if (!user.is_active) {
+    const error = new Error("User account is inactive.");
+    error.status = 403;
+    error.publicMessage =
+      "This account is currently inactive. Please contact your business administrator.";
     throw error;
   }
 
@@ -37,11 +46,12 @@ export async function loginUser({ email, password }) {
     user.password_hash
   );
 
-  if (!passwordMatches || !user.is_active) {
-    const error = new Error("Invalid email or password.");
+  if (!passwordMatches) {
+    const error = new Error("Incorrect password.");
     error.status = 401;
     error.publicMessage =
-      "The email or password you entered is incorrect. Please try again.";
+      "The password you entered is incorrect.";
+    error.field = "password";
     throw error;
   }
 
