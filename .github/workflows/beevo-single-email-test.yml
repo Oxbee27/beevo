@@ -48,7 +48,16 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
+      - name: Check database hostname DNS
+        run: |
+          if [ -z "$DB_HOST" ]; then
+            echo "DB_HOST is missing."
+            exit 1
+          fi
+          echo "Checking database hostname DNS..."
+          node -e "require('dns').lookup(process.env.DB_HOST, (err, address) => { if (err) { console.error('DNS lookup failed:', err.code); process.exit(1); } console.log('DNS lookup successful.'); })"
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
       - name: Process the approved email only
         run: node src/workers/run-single-follow-up-message.js
         env:
