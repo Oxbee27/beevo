@@ -99,15 +99,15 @@ export async function processResendWebhookEvent({ eventId, event }) {
                 SET status = $3,
                     provider_event_at = $4,
                     sent_at = CASE
-                      WHEN $3 = 'delivered' THEN COALESCE(sent_at, NOW())
+                      WHEN $6 = TRUE THEN COALESCE(sent_at, NOW())
                       ELSE sent_at
                     END,
                     delivered_at = CASE
-                      WHEN $3 = 'delivered' THEN COALESCE(delivered_at, NOW())
+                      WHEN $6 = TRUE THEN COALESCE(delivered_at, NOW())
                       ELSE delivered_at
                     END,
                     last_error = CASE
-                      WHEN $3 = 'delivered' THEN NULL
+                      WHEN $6 = TRUE THEN NULL
                       ELSE $5
                     END,
                     updated_at = NOW()
@@ -126,6 +126,7 @@ export async function processResendWebhookEvent({ eventId, event }) {
                 outcome,
                 eventCreatedAt,
                 isDelivered ? null : failureMessage,
+                isDelivered,
               ],
             );
 
