@@ -36,28 +36,78 @@ jobs:
         working-directory: backend
 
     steps:
-      -       - name: Check database hostname DNS
-        env:
-          DB_HOST: ${{ secrets.DB_HOST }}
-        run: |
-          echo "Checking system DNS..."
-          node -e "require('dns').lookup(process.env.DB_HOST, (err) => console.log(err ? err.code : 'System DNS successful'))"
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-          echo "Checking public DNS..."
-          node -e "require('https').get('https://dns.google/resolve?name=' + encodeURIComponent(process.env.DB_HOST) + '&type=A', (res) => { let data = ''; res.on('data', chunk => data += chunk); res.on('end', () => { const result = JSON.parse(data); console.log('DNS status:', result.Status); console.log('Address records found:', (result.Answer || []).filter(x => x.type === 1).length); }); }).on('error', err => { console.error('Public DNS check failed:', err.code); process.exitCode = 1; });"
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
+
       - name: Check database hostname DNS
         run: |
           if [ -z "$DB_HOST" ]; then
             echo "DB_HOST is missing."
             exit 1
           fi
-          echo "Checking database hostname DNS..."
-          node -e "require('dns').lookup(process.env.DB_HOST, (err, address) => { if (err) { console.error('DNS lookup failed:', err.code); process.exit(1); } console.log('DNS lookup successful.'); })"
+
+          echo "Checking system DNS..."
+
+          node --input-type=module -e '
+            import dns from "node:dns";
+
+            dns.lookup(process.env.DB_HOST, (error, address) => {
+              if (error) {
+                console.error("System DNS lookup failed:", error.code);
+                process.exitCode = 1;
+                return;
+              }
+
+              console.log("System DNS lookup successful.");
+              console.log("Resolved IP address:", address);
+            });
+          '
+
+          echo "Checking public DNS..."
+
+          node --input-type=module -e '
+            import https from "node:https";
+
+            const hostname = process.env.DB_HOST;
+            const url = "https://dns.google/resolve?name=" +
+              encodeURIComponent(hostname) + "&type=A";
+
+            https.get(url, (response) => {
+              let data = "";
+
+              response.on("data", (chunk) => data += chunk);
+
+              response.on("end", () => {
+                try {
+                  const result = JSON.parse(data);
+                  console.log("Public DNS status:", result.Status);
+                  console.log(
+                    "IPv4 records found:",
+                    (result.Answer || []).filter(record => record.type === 1).length
+                  );
+                } catch {
+                  console.error("Could not parse public DNS response.");
+                  process.exitCode = 1;
+                }
+              });
+            }).on("error", (error) => {
+              console.error("Public DNS check failed:", error.code);
+              process.exitCode = 1;
+            });
+          '
         env:
           DB_HOST: ${{ secrets.DB_HOST }}
+
       - name: Process the approved email only
         run: node src/workers/run-single-follow-up-message.js
         env:
