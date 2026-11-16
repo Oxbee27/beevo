@@ -1,0 +1,31 @@
+name: Beevo Database DNS Check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  database-dns-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check database hostname resolution
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+        run: |
+          node -e '
+          const dns = require("node:dns").promises;
+          (async () => {
+            if (!process.env.DB_HOST) {
+              throw new Error("DB_HOST secret is missing");
+            }
+            const host = process.env.DB_HOST.trim();
+            console.log("Checking database hostname resolution...");
+            const result = await dns.lookup(host);
+            console.log("DNS resolution successful:", result.address);
+          })().catch(error => {
+            console.error("DNS check failed:", error.code || error.message);
+            process.exit(1);
+          });
+          '
