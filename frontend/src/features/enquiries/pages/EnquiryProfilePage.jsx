@@ -6,6 +6,7 @@ import {
   deleteEnquiry,
 } from '../services/enquiry.service.js'
 import { getCustomers } from '../../customers/services/customer.service.js'
+import ConfirmDialog from '../../../components/ui/ConfirmDialog.jsx'
 
 const statuses = ['new', 'contacted', 'qualified', 'converted', 'lost']
 
@@ -48,6 +49,7 @@ export default function EnquiryProfilePage() {
   const [editing, setEditing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
@@ -129,11 +131,6 @@ export default function EnquiryProfilePage() {
   }
 
   async function handleDelete() {
-    const confirmed = window.confirm(
-      'Are you sure you want to delete this enquiry? This action cannot be undone.'
-    )
-    if (!confirmed) return
-
     setSaving(true)
     setError('')
     try {
@@ -141,9 +138,11 @@ export default function EnquiryProfilePage() {
       navigate('/enquiries', {
         state: { message: 'Enquiry deleted successfully.' },
       })
+      return true
     } catch (err) {
       setError(err.message || 'We could not delete this enquiry.')
       setSaving(false)
+      return false
     }
   }
 
@@ -397,13 +396,26 @@ export default function EnquiryProfilePage() {
       <div className="flex justify-end">
         <button
           type="button"
-          onClick={handleDelete}
+          onClick={() => setShowDeleteDialog(true)}
           disabled={saving}
           className="rounded-xl border border-inkberry/20 px-5 py-3 text-sm font-semibold text-inkberry/70 hover:bg-peach-sand/40 disabled:opacity-50"
         >
           Delete enquiry
         </button>
       </div>
+
+      {showDeleteDialog && (
+        <ConfirmDialog
+          title="Delete enquiry?"
+          message="Are you sure you want to delete this enquiry? This action cannot be undone."
+          confirmLabel="Delete enquiry"
+          loading={saving}
+          onCancel={() => setShowDeleteDialog(false)}
+          onConfirm={async () => {
+            if (await handleDelete()) setShowDeleteDialog(false)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import ConfirmDialog from '../../../components/ui/ConfirmDialog.jsx'
 import {
   getFollowUp,
   updateFollowUp,
@@ -48,6 +49,7 @@ export default function FollowUpProfilePage() {
   const [saving, setSaving] = useState(false)
   const [scheduling, setScheduling] = useState(false)
   const [cancellingId, setCancellingId] = useState(null)
+  const [messageToCancel, setMessageToCancel] = useState(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [editForm, setEditForm] = useState({
@@ -151,8 +153,6 @@ export default function FollowUpProfilePage() {
   }
 
   async function handleCancelMessage(messageId) {
-    if (!window.confirm('Cancel this scheduled message?')) return
-
     setCancellingId(messageId)
     setError('')
     setNotice('')
@@ -162,8 +162,10 @@ export default function FollowUpProfilePage() {
       setNotice('Scheduled message cancelled.')
       const rows = await getFollowUpMessages(id)
       setMessages(rows)
+      return true
     } catch (err) {
       setError(err.message || 'Unable to cancel this message.')
+      return false
     } finally {
       setCancellingId(null)
     }
@@ -431,7 +433,7 @@ export default function FollowUpProfilePage() {
                     <button
                       type="button"
                       disabled={cancellingId === message.id}
-                      onClick={() => handleCancelMessage(message.id)}
+                      onClick={() => setMessageToCancel(message.id)}
                       className="rounded-lg border border-inkberry/15 px-3 py-2 text-xs font-medium text-inkberry hover:bg-peach-sand/40 disabled:opacity-50"
                     >
                       {cancellingId === message.id ? 'Cancelling...' : 'Cancel message'}
@@ -462,6 +464,21 @@ export default function FollowUpProfilePage() {
           </div>
         )}
       </div>
+
+      {messageToCancel !== null && (
+        <ConfirmDialog
+          title="Cancel scheduled message?"
+          message="This scheduled message will be cancelled and will no longer be sent."
+          confirmLabel="Cancel message"
+          loading={cancellingId === messageToCancel}
+          onCancel={() => setMessageToCancel(null)}
+          onConfirm={async () => {
+            if (await handleCancelMessage(messageToCancel)) {
+              setMessageToCancel(null)
+            }
+          }}
+        />
+      )}
     </section>
   )
 }

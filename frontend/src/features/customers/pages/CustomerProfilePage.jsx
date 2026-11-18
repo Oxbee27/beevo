@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import ConfirmDialog from '../../../components/ui/ConfirmDialog.jsx'
 import {
   deleteCustomer,
   getCustomer,
@@ -156,6 +157,7 @@ export default function CustomerProfilePage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [deleting, setDeleting] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
   const loadProfile = useCallback(async () => {
     try {
@@ -243,12 +245,6 @@ export default function CustomerProfilePage() {
   }
 
   async function handleDelete() {
-    const confirmed = window.confirm(
-      `Delete ${customer.name}? This action cannot be undone.`,
-    )
-
-    if (!confirmed) return
-
     setDeleting(true)
     setError('')
 
@@ -258,9 +254,11 @@ export default function CustomerProfilePage() {
         replace: true,
         state: { message: 'Customer deleted successfully.' },
       })
+      return true
     } catch (err) {
       setError(err.message || 'We could not delete this customer.')
       setDeleting(false)
+      return false
     }
   }
 
@@ -305,7 +303,7 @@ export default function CustomerProfilePage() {
         </div>
         <button
           type="button"
-          onClick={handleDelete}
+          onClick={() => setShowDeleteDialog(true)}
           disabled={deleting}
           className="w-fit rounded-lg border border-inkberry/15 px-4 py-2.5 text-sm font-medium text-inkberry hover:bg-peach-sand/40 disabled:opacity-50"
         >
@@ -412,6 +410,19 @@ export default function CustomerProfilePage() {
           ) : null
         })}
       </section>
+
+      {showDeleteDialog && (
+        <ConfirmDialog
+          title="Delete customer?"
+          message={`Delete ${customer.name}? This action cannot be undone.`}
+          confirmLabel="Delete customer"
+          loading={deleting}
+          onCancel={() => setShowDeleteDialog(false)}
+          onConfirm={async () => {
+            if (await handleDelete()) setShowDeleteDialog(false)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getFollowUps, createFollowUp, updateFollowUp, deleteFollowUp } from '../services/follow-up.service.js'
 import { getEnquiries } from '../../enquiries/services/enquiry.service.js'
+import ConfirmDialog from '../../../components/ui/ConfirmDialog.jsx'
 
 const statusStyles = {
   pending: 'bg-peach-sand/60 text-inkberry',
@@ -33,6 +34,8 @@ export default function FollowUpsPage() {
   const [filter, setFilter] = useState('all')
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState(null)
+  const [deletingFollowUp, setDeletingFollowUp] = useState(false)
   const [form, setForm] = useState({
     enquiryId: '',
     note: '',
@@ -118,16 +121,21 @@ export default function FollowUpsPage() {
     }
   }
 
-  async function handleDelete(item) {
-    if (!window.confirm('Delete this follow-up? This action cannot be undone.')) return
+  async function handleDelete() {
+    if (!pendingDelete) return
+    setDeletingFollowUp(true)
     setError('')
     setNotice('')
     try {
-      await deleteFollowUp(item.id)
-      setFollowUps((current) => current.filter((row) => row.id !== item.id))
+      await deleteFollowUp(pendingDelete.id)
+      setFollowUps((current) => current.filter((row) => row.id !== pendingDelete.id))
       setNotice('Follow-up deleted.')
+      return true
     } catch (err) {
       setError(err.message || 'Unable to delete this follow-up.')
+      return false
+    } finally {
+      setDeletingFollowUp(false)
     }
   }
 
@@ -264,7 +272,7 @@ export default function FollowUpsPage() {
                   </select>
                   <button
                     type="button"
-                    onClick={() => handleDelete(item)}
+                    onClick={() => setPendingDelete(item)}
                     className="rounded-lg border border-inkberry/15 px-3 py-2 text-xs font-medium text-inkberry/65 hover:bg-peach-sand/40"
                   >
                     Delete
@@ -375,6 +383,19 @@ export default function FollowUpsPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete follow-up?"
+          message="This follow-up will be permanently deleted. This action cannot be undone."
+          confirmLabel="Delete follow-up"
+          loading={deletingFollowUp}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={async () => {
+            if (await handleDelete()) setPendingDelete(null)
+          }}
+        />
       )}
     </section>
   )

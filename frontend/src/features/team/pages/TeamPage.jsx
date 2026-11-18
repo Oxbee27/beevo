@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext.jsx'
+import ConfirmDialog from '../../../components/ui/ConfirmDialog.jsx'
 import {
   createStaff,
   createRole,
@@ -293,6 +294,7 @@ export default function TeamPage() {
   const [showRoleDialog, setShowRoleDialog] = useState(false)
   const [editingRole, setEditingRole] = useState(null)
   const [workingId, setWorkingId] = useState(null)
+  const [pendingConfirmation, setPendingConfirmation] = useState(null)
 
   const isOwner = user?.role === 'owner'
 
@@ -340,24 +342,9 @@ export default function TeamPage() {
     await loadData()
   }
 
-  async function changeStatus(member) {
-    const nextStatus = !member.is_active
-    const confirmed = window.confirm(
-      `${nextStatus ? 'Activate' : 'Deactivate'} ${member.name}'s account?`,
-    )
-    if (!confirmed) return
-
-    setWorkingId(member.id)
-    setNotice('')
-    try {
-      await updateStaffStatus(member.id, nextStatus)
-      setNotice(`${member.name}'s account has been ${nextStatus ? 'activated' : 'deactivated'}.`)
-      await loadData()
-    } catch (err) {
-      setError(err.message || 'We could not update this account.')
-    } finally {
-      setWorkingId(null)
-    }
+  function changeStatus(member) {
+    setPendingConfirmation({ type: 'status', member })
+    setError('')
   }
 
   async function saveRole(data) {
@@ -373,16 +360,44 @@ export default function TeamPage() {
     await loadData()
   }
 
-  async function removeRole(role) {
-    if (!window.confirm(`Delete the "${role.name}" role? This cannot be undone.`)) return
-    setWorkingId(role.id)
+  function removeRole(role) {
+    setPendingConfirmation({ type: 'role', role })
+    setError('')
+  }
+
+  async function confirmPendingAction() {
+    if (!pendingConfirmation || workingId !== null) return
+
+    const confirmation = pendingConfirmation
+    const targetId = confirmation.type === 'status'
+      ? confirmation.member.id
+      : confirmation.role.id
+
+    setWorkingId(targetId)
+    setError('')
     setNotice('')
+
     try {
-      await deleteRole(role.id)
-      setNotice('Role deleted successfully.')
+      if (confirmation.type === 'status') {
+        const { member } = confirmation
+        const nextStatus = !member.is_active
+        await updateStaffStatus(member.id, nextStatus)
+        setNotice(`${member.name}'s account has been ${nextStatus ? 'activated' : 'deactivated'}.`)
+      } else {
+        await deleteRole(confirmation.role.id)
+        setNotice('Role deleted successfully.')
+      }
+
+      setPendingConfirmation(null)
       await loadData()
     } catch (err) {
-      setError(err.message || 'This role could not be deleted. Check whether staff members are assigned to it.')
+      setError(
+        err.message || (
+          confirmation.type === 'status'
+            ? 'We could not update this account.'
+            : 'This role could not be deleted. Check whether staff members are assigned to it.'
+        ),
+      )
     } finally {
       setWorkingId(null)
     }
@@ -523,6 +538,29 @@ export default function TeamPage() {
             </div>
           )}
         </section>
+      )}
+
+      {pendingConfirmation && (
+        <ConfirmDialog
+          title={
+            pendingConfirmation.type === 'status'
+              ? `${pendingConfirmation.member.is_active ? 'Deactivate' : 'Activate'} staff account?`
+              : 'Delete custom role?'
+          }
+          message={
+            pendingConfirmation.type === 'status'
+              ? `${pendingConfirmation.member.is_active ? 'Deactivate' : 'Activate'} ${pendingConfirmation.member.name}'s account?`
+              : `Delete the "${pendingConfirmation.role.name}" role? This action cannot be undone.`
+          }
+          confirmLabel={
+            pendingConfirmation.type === 'status'
+              ? pendingConfirmation.member.is_active ? 'Deactivate account' : 'Activate account'
+              : 'Delete role'
+          }
+          loading={workingId !== null}
+          onCancel={() => setPendingConfirmation(null)}
+          onConfirm={confirmPendingAction}
+        />
       )}
 
       {showStaffDialog && (

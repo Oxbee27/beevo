@@ -8,31 +8,13 @@ import EnquiryProfilePage from '../features/enquiries/pages/EnquiryProfilePage.j
 import FollowUpsPage from '../features/follow-ups/pages/FollowUpsPage.jsx'
 import FollowUpProfilePage from '../features/follow-ups/pages/FollowUpProfilePage.jsx'
 import TeamPage from '../features/team/pages/TeamPage.jsx'
+import ProductsPage from '../features/products/pages/ProductsPage.jsx'
+import CommunicationPage from '../features/communication/pages/CommunicationPage.jsx'
+import WalletPage from '../features/wallet/pages/WalletPage.jsx'
 import LoginPage from '../features/authentication/pages/LoginPage.jsx'
 import RegisterPage from '../features/authentication/pages/RegisterPage.jsx'
 import ProtectedRoute from '../routes/ProtectedRoute.jsx'
 import PublicOnlyRoute from '../routes/PublicOnlyRoute.jsx'
-
-// eslint-disable-next-line react-refresh/only-export-components
-function ComingSoon({ title }) {
-  return (
-    <div className="rounded-2xl border border-inkberry/10 bg-white/70 p-8">
-      <p className="text-xs font-bold uppercase tracking-wider text-inkberry/50">
-        Beevo workspace
-      </p>
-      <h1 className="mt-2 text-2xl font-bold text-inkberry">{title}</h1>
-      <p className="mt-3 text-sm text-inkberry/60">
-        This section will be implemented as its own feature module.
-      </p>
-    </div>
-  )
-}
-
-const featureRoutes = [
-  ['communication', 'Communication'],
-  ['products', 'Products'],
-  ['wallet', 'Wallet'],
-]
 
 export const router = createBrowserRouter([
   {
@@ -57,10 +39,9 @@ export const router = createBrowserRouter([
           { path: 'follow-ups', element: <FollowUpsPage /> },
           { path: 'follow-ups/:id', element: <FollowUpProfilePage /> },
           { path: 'team', element: <TeamPage /> },
-          ...featureRoutes.map(([path, title]) => ({
-            path,
-            element: <ComingSoon title={title} />,
-          })),
+          { path: 'products', element: <ProductsPage /> },
+          { path: 'communication', element: <CommunicationPage /> },
+          { path: 'wallet', element: <WalletPage /> },
         ],
       },
     ],
