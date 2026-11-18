@@ -1,18 +1,22 @@
-import { verifyWhatsAppWebhook, handleWhatsAppWebhook } from "./controllers/whatsapp-webhook.controller.js";
 import "dotenv/config";
+import pool from "./config/database.js";
+import { verifyWhatsAppWebhook, handleWhatsAppWebhook } from "./controllers/whatsapp-webhook.controller.js";
 import { authenticateToken } from "./middleware/auth.middleware.js";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import authRoutes from "./routes/auth.routes.js";
 import customerRoutes from "./routes/customer.routes.js";
+import productRoutes from "./routes/product.routes.js";
 import enquiryRoutes from "./routes/enquiry.routes.js";
 import followUpRoutes from "./routes/follow-up.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
+import walletRoutes from "./routes/wallet.routes.js";
 import roleRoutes from "./routes/role.routes.js";
 import staffRoutes from "./routes/staff.routes.js";
 import { handleResendWebhook } from "./controllers/resend-webhook.controller.js";
 import { handleTermiiWebhook } from "./controllers/termii-webhook.controller.js";
+import { handlePaystackWebhook } from "./controllers/paystack-webhook.controller.js";
 
 
 
@@ -48,6 +52,13 @@ app.post(
   handleTermiiWebhook,
 );
 
+ // Paystack requires the original raw body for HMAC-SHA512 verification.
+app.post(
+  "/webhooks/paystack",
+  express.raw({ type: "application/json", limit: "1mb" }),
+  handlePaystackWebhook,
+);
+
 // Meta WhatsApp webhooks: GET verification and raw-body POST signature validation.
 app.get("/webhooks/whatsapp", verifyWhatsAppWebhook);
 app.post(
@@ -74,12 +85,32 @@ app.get("/health", (req, res) => {
   });
 });
 
+// Database readiness check. Keep /health as a process liveness check.
+app.get("/health/ready", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+
+    return res.status(200).json({
+      success: true,
+      status: "ready",
+      service: "beevo-backend",
+    });
+  } catch {
+    return res.status(503).json({
+      success: false,
+      status: "not_ready",
+      service: "beevo-backend",
+    });
+  }
+});
+
 // Authentication routes
 app.use("/auth", authRoutes);
 
 app.use("/roles", roleRoutes);
 app.use("/staff", staffRoutes);
 app.use("/customers", customerRoutes);
+app.use("/products", productRoutes);
 
 app.get("/auth/me", authenticateToken, (req, res) => {
   res.status(200).json({
@@ -96,6 +127,7 @@ app.use("/communications", communicationsRoutes);
 app.use("/conversations", conversationsRoutes);
 app.use("/follow-ups", followUpRoutes);
 app.use("/dashboard", dashboardRoutes);
+app.use("/wallet", walletRoutes);
 
 // Handle unknown routes
 app.use((req, res) => {
@@ -124,6 +156,21 @@ app.use((error, req, res, next) => {
     error.status <= 599
       ? error.status
       : 500;
+
+  // Handle malformed JSON before applying general error messages.
+  if (
+    error instanceof SyntaxError &&
+    error.status === 400 &&
+    "body" in error
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "Your request could not be processed. Please check the information you entered.",
+      errors: {
+        body: "Please check that your request contains valid JSON."
+      }
+    });
+  }
 
   const friendlyMessages = {
     400: "Some of the information you entered is incorrect. Please review it and try again.",
