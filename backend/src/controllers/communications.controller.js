@@ -15,7 +15,7 @@ import {
 const CHANNELS = new Set(["email", "sms", "whatsapp"]);
 const STATUSES = new Set([
   "pending", "processing", "sent", "delivered",
-  "failed", "cancelled", "unknown",
+  "failed", "cancelled", "unknown", "billing_blocked",
 ]);
 
 function positiveInteger(value) {

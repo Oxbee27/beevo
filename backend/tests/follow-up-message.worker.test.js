@@ -8,19 +8,29 @@ function createHarness({
   failAttemptUpdate = false,
   noDueMessages = false,
   channel = "email",
+  sourceType = "follow_up",
   whatsappEvents = [],
+  billingRateUnavailable = false,
+  insufficientWalletFunds = false,
 } = {}) {
   const message = {
     id: "101",
     business_id: "7",
-    follow_up_id: "4",
+    source_type: sourceType,
+    follow_up_id: sourceType === "restock" ? null : "4",
+    enquiry_id: sourceType === "restock" ? null : "9",
+    restock_recipient_id: sourceType === "restock" ? "201" : null,
     customer_id: "6",
     channel,
     recipient: ["sms", "whatsapp"].includes(channel)
       ? "+2348012345678"
       : "customer@example.com",
-    subject: channel === "email" ? "Checking in" : null,
-    body: "Thank you for your enquiry.",
+    subject: channel === "email"
+      ? sourceType === "restock" ? "Product is back in stock" : "Checking in"
+      : null,
+    body: sourceType === "restock"
+      ? "The product you were interested in is back in stock."
+      : "Thank you for your enquiry.",
     template_key: channel === "whatsapp" ? "hello_world" : null,
     attempt_count: 0,
     max_attempts: 5,
@@ -31,6 +41,16 @@ function createHarness({
     message: { ...message },
     attemptStatus: null,
     whatsappEvents: whatsappEvents.map((event) => ({ ...event })),
+    restockRecipient: {
+      id: "201",
+      status: "queued",
+      interest_id: "301",
+      skip_reason: null,
+    },
+    productInterest: {
+      id: "301",
+      status: "waiting",
+    },
     queries: [],
   };
 
@@ -41,6 +61,99 @@ function createHarness({
 
       if (/^(BEGIN|COMMIT|ROLLBACK)$/i.test(normalized)) {
         return { rows: [], rowCount: null };
+      }
+
+      // Communication billing SQL mocks.
+      if (normalized.startsWith("SELECT channel, unit_name, rate_kobo FROM communication_channel_rates")) {
+        return billingRateUnavailable
+          ? { rows: [], rowCount: 0 }
+          : {
+              rows: [{
+                channel: values[0],
+                unit_name: values[0] === "sms" ? "segment" : "message",
+                rate_kobo: "1",
+              }],
+              rowCount: 1,
+            };
+      }
+
+      if (normalized.startsWith("SELECT id, balance_kobo, currency FROM business_wallets")) {
+        return {
+          rows: [{
+            id: "wallet-7",
+            balance_kobo: insufficientWalletFunds ? "0" : "100000",
+            currency: "NGN",
+          }],
+          rowCount: 1,
+        };
+      }
+
+      if (normalized.startsWith("SELECT COALESCE(SUM(amount_kobo), 0)::TEXT AS reserved_kobo")) {
+        return { rows: [{ reserved_kobo: "0" }], rowCount: 1 };
+      }
+
+      if (normalized.startsWith("INSERT INTO wallet_reservations")) {
+        state.billingReservation = {
+          id: "reservation-101",
+          business_id: values[0],
+          wallet_id: values[1],
+          message_id: values[2],
+          attempt_number: values[3],
+          channel: values[4],
+          unit_count: values[5],
+          unit_rate_kobo: values[6],
+          amount_kobo: values[7],
+          status: "reserved",
+        };
+
+        return {
+          rows: [{
+            id: "reservation-101",
+            amount_kobo: values[7],
+            status: "reserved",
+          }],
+          rowCount: 1,
+        };
+      }
+
+      if (normalized.startsWith("SELECT * FROM wallet_reservations")) {
+        return {
+          rows: state.billingReservation ? [{ ...state.billingReservation }] : [],
+          rowCount: state.billingReservation ? 1 : 0,
+        };
+      }
+
+      if (normalized.startsWith("SELECT id, balance_kobo FROM business_wallets")) {
+        return {
+          rows: [{ id: values[0], balance_kobo: "100000" }],
+          rowCount: 1,
+        };
+      }
+
+      if (normalized.startsWith("UPDATE business_wallets")) {
+        return { rows: [{ id: values[0] }], rowCount: 1 };
+      }
+
+      if (normalized.startsWith("INSERT INTO wallet_transactions")) {
+        return { rows: [{ id: "ledger-101" }], rowCount: 1 };
+      }
+
+      if (normalized.startsWith("UPDATE wallet_reservations") && normalized.includes("SET status = 'captured'")) {
+        if (state.billingReservation) state.billingReservation.status = "captured";
+        return { rows: [{ id: values[0] }], rowCount: 1 };
+      }
+
+      if (normalized.startsWith("UPDATE wallet_reservations") && normalized.includes("SET status = 'released'")) {
+        if (state.billingReservation) state.billingReservation.status = "released";
+        return { rows: [{ id: "reservation-101" }], rowCount: 1 };
+      }
+
+      if (normalized.startsWith("SELECT id FROM wallet_transactions")) {
+        const captured = state.billingReservation?.status === "captured";
+        return {
+          rows: captured ? [{ id: "ledger-101" }] : [],
+          rowCount: captured ? 1 : 0,
+        };
       }
 
       if (
@@ -153,6 +266,17 @@ function createHarness({
       }
 
       if (normalized.startsWith("UPDATE follow_up_messages")) {
+        if (normalized.includes("billing_blocked")) {
+          state.message.status = "billing_blocked";
+          state.message.attempt_count = Math.max(
+            state.message.attempt_count - 1,
+            0,
+          );
+          state.message.locked_by = null;
+          state.message.locked_at = null;
+          return { rows: [{ id: state.message.id }], rowCount: 1 };
+        }
+
         if (normalized.includes("SET status = 'unknown'")) {
           state.message.status = "unknown";
           state.message.locked_by = null;
@@ -211,6 +335,50 @@ function createHarness({
         return { rows: [], rowCount: failAttemptUpdate ? 0 : 1 };
       }
 
+      if (
+        normalized.startsWith("UPDATE restock_campaign_recipients") &&
+        normalized.includes("SET status = 'sending'")
+      ) {
+        state.restockRecipient.status = "sending";
+        state.restockRecipient.skip_reason = null;
+        return { rows: [{ id: state.restockRecipient.id }], rowCount: 1 };
+      }
+
+      if (
+        normalized.startsWith("UPDATE restock_campaign_recipients") &&
+        normalized.includes("SET status = 'sent'")
+      ) {
+        state.restockRecipient.status = "sent";
+        state.restockRecipient.skip_reason = null;
+        return {
+          rows: [{ interest_id: state.restockRecipient.interest_id }],
+          rowCount: 1,
+        };
+      }
+
+      if (
+        normalized.startsWith("UPDATE restock_campaign_recipients") &&
+        normalized.includes("SET status = 'skipped'")
+      ) {
+        state.restockRecipient.status = "skipped";
+        state.restockRecipient.skip_reason =
+          "consent_or_eligibility_no_longer_valid";
+        return { rows: [{ id: state.restockRecipient.id }], rowCount: 1 };
+      }
+
+      if (normalized.startsWith("UPDATE product_interests")) {
+        state.productInterest.status = "notified";
+        return { rows: [{ id: state.productInterest.id }], rowCount: 1 };
+      }
+
+      if (
+        normalized.startsWith(
+          "UPDATE restock_campaign_recipients r"
+        )
+      ) {
+        return { rows: [], rowCount: 0 };
+      }
+
       throw new Error(`Unexpected test SQL: ${normalized}`);
     },
 
@@ -229,6 +397,19 @@ function createHarness({
         normalized.includes("ANY($2)")
       ) {
         return { rows: (values[1] || []).map((id) => ({ id })), rowCount: (values[1] || []).length };
+      }
+
+      if (
+        normalized.includes("SELECT 1 FROM restock_campaign_recipients r")
+      ) {
+        if (failEligibilityCheck) {
+          throw new Error("Simulated eligibility database failure.");
+        }
+
+        return {
+          rows: eligibleAfterClaim ? [{ "?column?": 1 }] : [],
+          rowCount: eligibleAfterClaim ? 1 : 0,
+        };
       }
 
       if (normalized.includes("SELECT 1 FROM follow_ups")) {
@@ -316,6 +497,12 @@ describe("Beevo scheduled-message worker", () => {
     expect(state.message.status).toBe("sent");
     expect(state.message.provider_message_id).toBe("resend-test-101");
     expect(state.attemptStatus).toBe("sent");
+    expect(state.billingReservation.status).toBe("captured");
+    expect(
+      state.queries.some((query) =>
+        query.startsWith("INSERT INTO wallet_transactions")
+      ),
+    ).toBe(true);
   });
 
   it("records a provider failure for retry without losing the message", async () => {
@@ -338,6 +525,7 @@ describe("Beevo scheduled-message worker", () => {
 
     expect(state.message.status).toBe("pending");
     expect(state.attemptStatus).toBe("failed");
+    expect(state.billingReservation.status).toBe("released");
   });
 
   it("marks an ambiguous network outcome unknown without retrying", async () => {
@@ -355,10 +543,68 @@ describe("Beevo scheduled-message worker", () => {
     expect(result.results).toEqual([{ id: "101", status: "unknown" }]);
     expect(state.message.status).toBe("unknown");
     expect(state.attemptStatus).toBe("unknown");
+    expect(state.billingReservation.status).toBe("reserved");
+    expect(state.billingReservation.status).toBe("reserved");
     expect(
       state.queries.some((query) => query.includes("SET status = CASE")),
     ).toBe(false);
+    expect(
+      state.queries.some((query) =>
+        query.includes("SET status = 'released'")
+      ),
+    ).toBe(false);
   });
+
+  it.each([
+    ["an unavailable channel rate", { billingRateUnavailable: true }],
+    ["insufficient wallet funds", { insufficientWalletFunds: true }],
+  ])(
+    "blocks delivery for %s without consuming a provider attempt",
+    async (_description, billingOptions) => {
+      const { db, state } = createHarness(billingOptions);
+
+      const sendEmail = vi.fn();
+      const sendSms = vi.fn();
+      const sendWhatsApp = vi.fn();
+
+      const result = await processDueFollowUpMessages({
+        db,
+        workerId: "billing-blocked-test-worker",
+        sendEmail,
+        sendSms,
+        sendWhatsApp,
+      });
+
+      expect(sendEmail).not.toHaveBeenCalled();
+      expect(sendSms).not.toHaveBeenCalled();
+      expect(sendWhatsApp).not.toHaveBeenCalled();
+
+      expect(result.processed).toBe(1);
+      expect(result.results[0].status).toBe("billing_blocked");
+
+      expect(state.message.status).toBe("billing_blocked");
+      expect(state.message.attempt_count).toBe(0);
+      expect(state.message.locked_by).toBeNull();
+      expect(state.message.locked_at).toBeNull();
+      expect(state.attemptStatus).toBeNull();
+
+      expect(
+        state.queries.some((query) =>
+          query.startsWith("DELETE FROM message_delivery_attempts")
+        ),
+      ).toBe(true);
+
+      expect(
+        state.queries.some((query) =>
+          query.startsWith("UPDATE follow_up_messages") &&
+          query.includes("billing_blocked")
+        ),
+      ).toBe(true);
+
+      expect(state.queries).toContain("COMMIT");
+      expect(state.queries).toContain("ROLLBACK");
+    },
+  );
 
   it("releases a claimed message when the eligibility database check fails", async () => {
     const { db, state } = createHarness({
@@ -661,6 +907,74 @@ describe("Beevo scheduled-message worker", () => {
     );
     expect(state.attemptStatus).toBe("failed");
     expect(state.whatsappEvents[0].processing_result).toBe("matched");
+  });
+
+
+  it("sends a restock notification and marks its interest as notified", async () => {
+    const { db, state } = createHarness({
+      sourceType: "restock",
+      channel: "email",
+    });
+
+    const sendEmail = vi.fn().mockResolvedValue({
+      provider: "resend",
+      providerMessageId: "resend-restock-201",
+    });
+
+    const result = await processDueFollowUpMessages({
+      db,
+      workerId: "restock-success-worker",
+      sendEmail,
+    });
+
+    expect(sendEmail).toHaveBeenCalledOnce();
+    expect(sendEmail).toHaveBeenCalledWith({
+      to: "customer@example.com",
+      subject: "Product is back in stock",
+      body: "The product you were interested in is back in stock.",
+    });
+    expect(result).toEqual({
+      processed: 1,
+      results: [{ id: "101", status: "sent" }],
+    });
+    expect(state.message.status).toBe("sent");
+    expect(state.message.provider_message_id).toBe("resend-restock-201");
+    expect(state.attemptStatus).toBe("sent");
+    expect(state.billingReservation.status).toBe("captured");
+    expect(state.restockRecipient.status).toBe("sent");
+    expect(state.productInterest.status).toBe("notified");
+  });
+
+  it("skips a restock recipient when eligibility is withdrawn before delivery", async () => {
+    const { db, state } = createHarness({
+      sourceType: "restock",
+      eligibleAfterClaim: false,
+    });
+
+    const sendEmail = vi.fn();
+    const sendSms = vi.fn();
+    const sendWhatsApp = vi.fn();
+
+    const result = await processDueFollowUpMessages({
+      db,
+      workerId: "restock-ineligible-worker",
+      sendEmail,
+      sendSms,
+      sendWhatsApp,
+    });
+
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(sendWhatsApp).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      processed: 1,
+      results: [{ id: "101", status: "cancelled" }],
+    });
+    expect(state.message.status).toBe("cancelled");
+    expect(state.attemptStatus).toBe("failed");
+    expect(state.restockRecipient.status).toBe("skipped");
+    expect(state.productInterest.status).toBe("waiting");
+    expect(state.billingReservation).toBeUndefined();
   });
 
 });

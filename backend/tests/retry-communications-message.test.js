@@ -127,8 +127,46 @@ describe("Retry communications message", () => {
 
     const updateCall = client.query.mock.calls[2];
     expect(updateCall[0]).toContain("status = 'pending'");
-    expect(updateCall[0]).toContain("max_attempts = attempt_count + 1");
-    expect(updateCall[1]).toEqual([7, 12]);
+    expect(updateCall[0]).toContain(
+      "WHEN $3 = 'failed' THEN attempt_count + 1",
+    );
+    expect(updateCall[0]).toContain("ELSE max_attempts");
+    expect(updateCall[1]).toEqual([7, 12, "failed"]);
+  });
+
+  it("resumes a billing-blocked message without consuming another attempt", async () => {
+    const client = setupMessage({
+      id: 12,
+      status: "billing_blocked",
+      attempt_count: 2,
+      max_attempts: 4,
+      follow_up_pending: true,
+      consent_granted: true,
+    });
+
+    client.query
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: [{
+          id: 12,
+          status: "pending",
+          attempt_count: 2,
+          max_attempts: 4,
+        }],
+      })
+      .mockResolvedValueOnce({}); // COMMIT
+
+    const result = await retryCommunicationsMessage(7, 12);
+
+    expect(result.conflict).toBe(false);
+    expect(result.message.status).toBe("pending");
+    expect(result.message.attempt_count).toBe(2);
+    expect(result.message.max_attempts).toBe(4);
+
+    const updateCall = client.query.mock.calls[2];
+    expect(updateCall[0]).toContain("ELSE max_attempts");
+    expect(updateCall[0]).not.toMatch(/attempt_count\\s*=/);
+    expect(updateCall[1]).toEqual([7, 12, "billing_blocked"]);
   });
 
   it("enforces the hard attempt ceiling", async () => {

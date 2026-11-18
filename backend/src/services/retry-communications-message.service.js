@@ -45,12 +45,14 @@ export async function retryCommunicationsMessage(businessId, messageId) {
 
     const message = result.rows[0];
 
-    if (message.status !== "failed") {
+    const isBillingBlocked = message.status === "billing_blocked";
+
+    if (message.status !== "failed" && !isBillingBlocked) {
       await client.query("COMMIT");
       return {
         message,
         conflict: true,
-        reason: "Only definitively failed messages can be manually retried.",
+        reason: "Only definitively failed or billing-blocked messages can be resumed.",
       };
     }
 
@@ -63,29 +65,37 @@ export async function retryCommunicationsMessage(businessId, messageId) {
       };
     }
 
-    if (Number(message.attempt_count) >= MAX_TOTAL_ATTEMPTS) {
-      await client.query("COMMIT");
-      return {
-        message,
-        conflict: true,
-        reason: "The maximum delivery attempt limit has been reached.",
-      };
-    }
+    // Billing blocks happen before provider submission and do not consume
+    // the provider retry allowance. Failed provider deliveries retain the
+    // existing automatic-retry and hard-attempt limits.
+    if (!isBillingBlocked) {
+      if (Number(message.attempt_count) >= MAX_TOTAL_ATTEMPTS) {
+        await client.query("COMMIT");
+        return {
+          message,
+          conflict: true,
+          reason: "The maximum delivery attempt limit has been reached.",
+        };
+      }
 
-    if (Number(message.attempt_count) < Number(message.max_attempts)) {
-      await client.query("COMMIT");
-      return {
-        message,
-        conflict: true,
-        reason: "This message still has automatic retry attempts remaining.",
-      };
+      if (Number(message.attempt_count) < Number(message.max_attempts)) {
+        await client.query("COMMIT");
+        return {
+          message,
+          conflict: true,
+          reason: "This message still has automatic retry attempts remaining.",
+        };
+      }
     }
 
     const updated = await client.query(
       `
         UPDATE follow_up_messages
         SET status = 'pending',
-            max_attempts = attempt_count + 1,
+            max_attempts = CASE
+              WHEN $3 = 'failed' THEN attempt_count + 1
+              ELSE max_attempts
+            END,
             next_attempt_at = NOW(),
             last_error = NULL,
             locked_at = NULL,
@@ -93,7 +103,7 @@ export async function retryCommunicationsMessage(businessId, messageId) {
             updated_at = NOW()
         WHERE business_id = $1
           AND id = $2
-          AND status = 'failed'
+          AND status = $3
         RETURNING
           id,
           follow_up_id,
@@ -106,7 +116,7 @@ export async function retryCommunicationsMessage(businessId, messageId) {
           next_attempt_at,
           updated_at
       `,
-      [businessId, messageId],
+      [businessId, messageId, message.status],
     );
 
     if (updated.rowCount !== 1) {

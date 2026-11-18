@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
 import pool from "../config/database.js";
+import {
+  reserveCommunicationFunds,
+  captureCommunicationReservation,
+  releaseCommunicationReservation,
+} from "../services/communication-billing.service.js";
 import { sendFollowUpEmail } from "../utils/send-follow-up-email.js";
 import { sendFollowUpSms } from "../utils/send-follow-up-sms.js";
 import { sendFollowUpWhatsApp } from "../utils/send-follow-up-whatsapp.js";
@@ -50,6 +55,22 @@ async function claimDueMessages(db, workerId, batchSize, messageId = null) {
       [messageId],
     );
 
+    // An abandoned restock delivery has an unknown provider outcome.
+    // Do not automatically retry it because the provider may have accepted it.
+    await client.query(
+      `
+        UPDATE restock_campaign_recipients r
+        SET status = 'failed',
+            skip_reason = 'delivery_outcome_unknown'
+        FROM follow_up_messages m
+        WHERE m.business_id = r.business_id
+          AND m.restock_recipient_id = r.id
+          AND m.source_type = 'restock'
+          AND m.status = 'unknown'
+          AND r.status = 'sending'
+      `,
+    );
+
     // Cancel messages when consent has been withdrawn.
     await client.query(
       `
@@ -77,6 +98,7 @@ async function claimDueMessages(db, workerId, batchSize, messageId = null) {
             last_error = 'Message cancelled because its follow-up is no longer pending.',
             updated_at = NOW()
         WHERE m.status = 'pending'
+          AND m.source_type = 'follow_up'
           AND ($1::BIGINT IS NULL OR m.id = $1)
           AND EXISTS (
             SELECT 1
@@ -89,6 +111,54 @@ async function claimDueMessages(db, workerId, batchSize, messageId = null) {
       [messageId],
     );
 
+    // A restock message is no longer eligible if its campaign was stopped,
+    // its product was archived, or its customer interest is no longer waiting.
+    await client.query(
+      `
+        UPDATE follow_up_messages m
+        SET status = 'cancelled',
+            last_error = 'Restock notification cancelled because its campaign, product, or customer interest is no longer eligible.',
+            updated_at = NOW()
+        WHERE m.status = 'pending'
+          AND m.source_type = 'restock'
+          AND ($1::BIGINT IS NULL OR m.id = $1)
+          AND NOT EXISTS (
+            SELECT 1
+            FROM restock_campaign_recipients r
+            INNER JOIN restock_campaigns rc
+              ON rc.business_id = r.business_id
+             AND rc.id = r.campaign_id
+            INNER JOIN products p
+              ON p.business_id = rc.business_id
+             AND p.id = rc.product_id
+            INNER JOIN product_interests i
+              ON i.business_id = r.business_id
+             AND i.id = r.interest_id
+            WHERE r.business_id = m.business_id
+              AND r.id = m.restock_recipient_id
+              AND r.status IN ('queued', 'sending')
+              AND rc.status IN ('queued', 'processing')
+              AND p.is_active = TRUE
+              AND i.status = 'waiting'
+          )
+      `,
+      [messageId],
+    );
+
+    await client.query(
+      `
+        UPDATE restock_campaign_recipients r
+        SET status = 'skipped',
+            skip_reason = 'restock_eligibility_no_longer_valid'
+        FROM follow_up_messages m
+        WHERE m.business_id = r.business_id
+          AND m.restock_recipient_id = r.id
+          AND m.source_type = 'restock'
+          AND m.status = 'cancelled'
+          AND r.status IN ('queued', 'sending')
+      `,
+    );
+
     const dueResult = await client.query(
       `
         SELECT m.*
@@ -98,11 +168,39 @@ async function claimDueMessages(db, workerId, batchSize, messageId = null) {
          AND p.customer_id = m.customer_id
          AND p.channel = m.channel
          AND p.consent_status = 'granted'
-        INNER JOIN follow_ups f
+        LEFT JOIN follow_ups f
           ON f.business_id = m.business_id
          AND f.id = m.follow_up_id
-         AND f.status = 'pending'
         WHERE m.status = 'pending'
+          AND (
+            (
+              m.source_type = 'follow_up'
+              AND f.status = 'pending'
+            )
+            OR
+            (
+              m.source_type = 'restock'
+              AND EXISTS (
+                SELECT 1
+                FROM restock_campaign_recipients r
+                INNER JOIN restock_campaigns rc
+                  ON rc.business_id = r.business_id
+                 AND rc.id = r.campaign_id
+                INNER JOIN products p
+                  ON p.business_id = rc.business_id
+                 AND p.id = rc.product_id
+                INNER JOIN product_interests i
+                  ON i.business_id = r.business_id
+                 AND i.id = r.interest_id
+                WHERE r.business_id = m.business_id
+                  AND r.id = m.restock_recipient_id
+                  AND r.status IN ('queued', 'sending')
+                  AND rc.status IN ('queued', 'processing')
+                  AND p.is_active = TRUE
+                  AND i.status = 'waiting'
+              )
+            )
+          )
           AND m.channel IN ('email', 'sms', 'whatsapp')
           AND ($2::BIGINT IS NULL OR m.id = $2)
           AND m.scheduled_for <= NOW()
@@ -164,6 +262,27 @@ async function claimDueMessages(db, workerId, batchSize, messageId = null) {
         ],
       );
 
+      if (current.source_type === "restock") {
+        const recipientUpdated = await client.query(
+          `
+            UPDATE restock_campaign_recipients
+            SET status = 'sending',
+                skip_reason = NULL
+            WHERE business_id = $1
+              AND id = $2
+              AND status IN ('queued', 'sending')
+            RETURNING id
+          `,
+          [current.business_id, current.restock_recipient_id],
+        );
+
+        if (recipientUpdated.rowCount !== 1) {
+          throw new Error(
+            "Beevo could not claim the restock campaign recipient.",
+          );
+        }
+      }
+
       claimed.push(current);
     }
 
@@ -177,8 +296,47 @@ async function claimDueMessages(db, workerId, batchSize, messageId = null) {
   }
 }
 
-// Recheck both consent and follow-up status immediately before sending.
+// Recheck consent and source-specific eligibility immediately before sending.
 async function canSendMessage(db, message) {
+  if (message.source_type === "restock") {
+    const result = await db.query(
+      `
+        SELECT 1
+        FROM restock_campaign_recipients r
+        INNER JOIN restock_campaigns rc
+          ON rc.business_id = r.business_id
+         AND rc.id = r.campaign_id
+        INNER JOIN products p
+          ON p.business_id = rc.business_id
+         AND p.id = rc.product_id
+        INNER JOIN product_interests i
+          ON i.business_id = r.business_id
+         AND i.id = r.interest_id
+        INNER JOIN customer_communication_preferences pref
+          ON pref.business_id = r.business_id
+         AND pref.customer_id = r.customer_id
+         AND pref.channel = r.channel
+         AND pref.consent_status = 'granted'
+        WHERE r.business_id = $1
+          AND r.id = $2
+          AND r.customer_id = $3
+          AND r.channel = $4
+          AND r.status = 'sending'
+          AND rc.status IN ('queued', 'processing')
+          AND p.is_active = TRUE
+          AND i.status = 'waiting'
+      `,
+      [
+        message.business_id,
+        message.restock_recipient_id,
+        message.customer_id,
+        message.channel,
+      ],
+    );
+
+    return result.rowCount > 0;
+  }
+
   const result = await db.query(
     `
       SELECT 1
@@ -278,6 +436,19 @@ async function releaseAfterEligibilityCheckError(
       );
     }
 
+    if (message.source_type === "restock") {
+      await client.query(
+        `
+          UPDATE restock_campaign_recipients
+          SET status = 'queued'
+          WHERE business_id = $1
+            AND id = $2
+            AND status = 'sending'
+        `,
+        [message.business_id, message.restock_recipient_id],
+      );
+    }
+
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
@@ -328,6 +499,25 @@ async function completeWithoutSending(db, message, workerId) {
       throw new Error("Beevo could not confirm the delivery-attempt record.");
     }
 
+
+    if (message.source_type === "restock") {
+      const recipientUpdated = await client.query(
+        `
+          UPDATE restock_campaign_recipients
+          SET status = 'skipped',
+              skip_reason = 'consent_or_eligibility_no_longer_valid'
+          WHERE business_id = $1
+            AND id = $2
+            AND status IN ('queued', 'sending')
+          RETURNING id
+        `,
+        [message.business_id, message.restock_recipient_id],
+      );
+
+      if (recipientUpdated.rowCount !== 1) {
+        throw new Error("Beevo could not skip the restock recipient.");
+      }
+    }
 
     await client.query("COMMIT");
   } catch (error) {
@@ -411,6 +601,10 @@ async function completeSuccessfulDelivery(db, message, workerId, delivery) {
     if (attemptUpdated.rowCount !== 1) {
       throw new Error("Beevo could not confirm the delivery-attempt record.");
     }
+
+    // Capture the prepaid charge in the same transaction that records
+    // provider acceptance. A rollback preserves the reservation.
+    await captureCommunicationReservation(client, message);
 
     // A Termii webhook may have arrived before the provider ID was saved.
     // Process those events now, without depending on provider retries.
@@ -522,6 +716,49 @@ async function completeSuccessfulDelivery(db, message, workerId, delivery) {
       }
     }
 
+    if (message.source_type === "restock") {
+      const recipientUpdated = await client.query(
+        `
+          UPDATE restock_campaign_recipients
+          SET status = 'sent',
+              skip_reason = NULL
+          WHERE business_id = $1
+            AND id = $2
+            AND status = 'sending'
+          RETURNING interest_id
+        `,
+        [message.business_id, message.restock_recipient_id],
+      );
+
+      if (recipientUpdated.rowCount !== 1) {
+        throw new Error(
+          "Beevo could not mark the restock recipient as sent.",
+        );
+      }
+
+      const interestUpdated = await client.query(
+        `
+          UPDATE product_interests
+          SET status = 'notified',
+              updated_at = NOW()
+          WHERE business_id = $1
+            AND id = $2
+            AND status = 'waiting'
+          RETURNING id
+        `,
+        [
+          message.business_id,
+          recipientUpdated.rows[0].interest_id,
+        ],
+      );
+
+      if (interestUpdated.rowCount !== 1) {
+        throw new Error(
+          "Beevo could not mark the product interest as notified.",
+        );
+      }
+    }
+
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
@@ -531,6 +768,81 @@ async function completeSuccessfulDelivery(db, message, workerId, delivery) {
   }
 }
 
+
+
+async function recordBillingBlocked(db, message, workerId, error) {
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const safeError = String(
+      error?.message || "Communication billing is not currently available.",
+    ).slice(0, 1000);
+
+    const updated = await client.query(
+      `
+        UPDATE follow_up_messages
+        SET status = 'billing_blocked',
+            attempt_count = GREATEST(attempt_count - 1, 0),
+            last_error = $4,
+            locked_at = NULL,
+            locked_by = NULL,
+            updated_at = NOW()
+        WHERE business_id = $1
+          AND id = $2
+          AND status = 'processing'
+          AND locked_by = $3
+        RETURNING id
+      `,
+      [message.business_id, message.id, workerId, safeError],
+    );
+
+    if (updated.rowCount !== 1) {
+      throw new Error("The worker no longer owns this message.");
+    }
+
+    // No provider was contacted. Remove the provisional attempt so that
+    // resuming this message can safely reuse the same attempt number.
+    const deleted = await client.query(
+      `
+        DELETE FROM message_delivery_attempts
+        WHERE business_id = $1
+          AND message_id = $2
+          AND attempt_number = $3
+          AND status = 'processing'
+        RETURNING id
+      `,
+      [message.business_id, message.id, message.attempt_count],
+    );
+
+    if (deleted.rowCount !== 1) {
+      throw new Error("Beevo could not reverse the provisional delivery attempt.");
+    }
+
+    // Deliberately retain any reservation. A reservation may have committed
+    // even if its acknowledgement was lost; the same attempt number can reuse it.
+    if (message.source_type === "restock") {
+      await client.query(
+        `
+          UPDATE restock_campaign_recipients
+          SET status = 'queued'
+          WHERE business_id = $1
+            AND id = $2
+            AND status = 'sending'
+        `,
+        [message.business_id, message.restock_recipient_id],
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
 
 async function recordFailedDelivery(db, message, workerId, error) {
@@ -598,6 +910,33 @@ async function recordFailedDelivery(db, message, workerId, error) {
       throw new Error("Beevo could not confirm the delivery-attempt record.");
     }
 
+    // A definite provider rejection means the provider did not accept
+    // the message, so the reserved funds can safely be released.
+    await releaseCommunicationReservation(client, message);
+
+    if (message.source_type === "restock") {
+      await client.query(
+        `
+          UPDATE restock_campaign_recipients r
+          SET status = CASE
+                WHEN m.status = 'failed' THEN 'failed'
+                ELSE 'queued'
+              END,
+              skip_reason = CASE
+                WHEN m.status = 'failed' THEN 'delivery_attempts_exhausted'
+                ELSE NULL
+              END
+          FROM follow_up_messages m
+          WHERE m.business_id = r.business_id
+            AND m.restock_recipient_id = r.id
+            AND m.business_id = $1
+            AND m.id = $2
+            AND r.status = 'sending'
+        `,
+        [message.business_id, message.id],
+      );
+    }
+
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
@@ -657,6 +996,20 @@ async function recordUnknownDelivery(db, message, workerId, error) {
 
     if (attemptUpdated.rowCount !== 1) {
       throw new Error("Beevo could not confirm the delivery-attempt record.");
+    }
+
+    if (message.source_type === "restock") {
+      await client.query(
+        `
+          UPDATE restock_campaign_recipients
+          SET status = 'failed',
+              skip_reason = 'delivery_outcome_unknown'
+          WHERE business_id = $1
+            AND id = $2
+            AND status = 'sending'
+        `,
+        [message.business_id, message.restock_recipient_id],
+      );
     }
 
     await client.query("COMMIT");
@@ -798,6 +1151,42 @@ export async function processDueFollowUpMessages({
             console.error("Beevo could not cancel an ineligible message:", error.message);
             results.push({ id: message.id, status: "database_error" });
           }
+          continue;
+        }
+
+        // Reserve funds only after the final eligibility check and
+        // before contacting the external provider.
+        try {
+          await reserveCommunicationFunds(db, message);
+        } catch (billingError) {
+          console.error(
+            "Beevo could not reserve communication funds:",
+            billingError.message,
+          );
+
+          try {
+            await recordBillingBlocked(
+              db,
+              message,
+              workerId,
+              billingError,
+            );
+            results.push({
+              id: message.id,
+              status: "billing_blocked",
+              code: billingError.code || "COMMUNICATION_BILLING_ERROR",
+            });
+          } catch (databaseError) {
+            console.error(
+              "Beevo could not record the billing failure:",
+              databaseError.message,
+            );
+            results.push({
+              id: message.id,
+              status: "database_error",
+            });
+          }
+
           continue;
         }
 

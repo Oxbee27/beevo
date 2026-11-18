@@ -36,6 +36,7 @@ export function requirePermission(permissionCode) {
 
       const user = result.rows[0];
 
+
       // Always use the current database role, not the JWT role.
       req.user.role = user.role;
 
