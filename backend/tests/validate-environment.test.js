@@ -1,6 +1,21 @@
 import { describe, it, expect } from "vitest";
 import { validateProductionEnvironment } from "../src/config/validate-environment.js";
 
+const VALID_CA_BASE64 = Buffer.from(
+  "-----BEGIN CERTIFICATE-----\nTEST-CERTIFICATE\n-----END CERTIFICATE-----",
+).toString("base64");
+
+const VALID_PRODUCTION_ENV = {
+  NODE_ENV: "production",
+  DB_HOST: "database-host",
+  DB_NAME: "beevo",
+  DB_USER: "beevo_app",
+  DB_PASSWORD: "database-password",
+  DB_SSL: "true",
+  DB_SSL_CA_BASE64: VALID_CA_BASE64,
+  JWT_SECRET: "a-valid-production-secret-with-32-chars",
+};
+
 describe("Production environment validation", () => {
   it("does not enforce production settings in development", () => {
     expect(() =>
@@ -18,18 +33,14 @@ describe("Production environment validation", () => {
     expect(() =>
       validateProductionEnvironment({ NODE_ENV: "production" }),
     ).toThrow(
-      "DB_HOST is required; DB_NAME is required; DB_USER is required; DB_PASSWORD is required; JWT_SECRET is required",
+      "DB_HOST is required; DB_NAME is required; DB_USER is required; DB_PASSWORD is required; JWT_SECRET is required; DB_SSL_CA_BASE64 is required; DB_SSL must be true in production",
     );
   });
 
   it("rejects a JWT secret shorter than 32 characters", () => {
     expect(() =>
       validateProductionEnvironment({
-        NODE_ENV: "production",
-        DB_HOST: "database-host",
-        DB_NAME: "beevo",
-        DB_USER: "beevo_app",
-        DB_PASSWORD: "database-password",
+        ...VALID_PRODUCTION_ENV,
         JWT_SECRET: "short-secret",
       }),
     ).toThrow("JWT_SECRET must contain at least 32 characters");
@@ -37,14 +48,7 @@ describe("Production environment validation", () => {
 
   it("accepts valid production configuration", () => {
     expect(() =>
-      validateProductionEnvironment({
-        NODE_ENV: "production",
-        DB_HOST: "database-host",
-        DB_NAME: "beevo",
-        DB_USER: "beevo_app",
-        DB_PASSWORD: "database-password",
-        JWT_SECRET: "a-valid-production-secret-with-32-chars",
-      }),
+      validateProductionEnvironment(VALID_PRODUCTION_ENV),
     ).not.toThrow();
   });
 
@@ -53,11 +57,7 @@ describe("Production environment validation", () => {
 
     try {
       validateProductionEnvironment({
-        NODE_ENV: "production",
-        DB_HOST: "database-host",
-        DB_NAME: "beevo",
-        DB_USER: "beevo_app",
-        DB_PASSWORD: "database-password",
+        ...VALID_PRODUCTION_ENV,
         JWT_SECRET: secret,
       });
       throw new Error("Expected validation to fail");
@@ -65,5 +65,23 @@ describe("Production environment validation", () => {
       expect(error.message).toContain("JWT_SECRET");
       expect(error.message).not.toContain(secret);
     }
+  });
+
+  it("rejects production when PostgreSQL SSL is disabled", () => {
+    expect(() =>
+      validateProductionEnvironment({
+        ...VALID_PRODUCTION_ENV,
+        DB_SSL: "false",
+      }),
+    ).toThrow("DB_SSL must be true in production");
+  });
+
+  it("rejects an invalid CA certificate", () => {
+    expect(() =>
+      validateProductionEnvironment({
+        ...VALID_PRODUCTION_ENV,
+        DB_SSL_CA_BASE64: Buffer.from("not-a-certificate").toString("base64"),
+      }),
+    ).toThrow("DB_SSL_CA_BASE64 must contain a valid PEM certificate");
   });
 });

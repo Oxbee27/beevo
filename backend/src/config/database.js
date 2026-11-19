@@ -1,8 +1,11 @@
-
 import "dotenv/config";
 import pg from "pg";
 
 const { Pool } = pg;
+
+const sslCa = process.env.DB_SSL_CA_BASE64
+  ? Buffer.from(process.env.DB_SSL_CA_BASE64, "base64").toString("utf8")
+  : undefined;
 
 const pool = new Pool({
   host: process.env.DB_HOST,
@@ -13,8 +16,8 @@ const pool = new Pool({
   ssl:
     process.env.DB_SSL === "true"
       ? {
-          rejectUnauthorized:
-            process.env.DB_SSL_REJECT_UNAUTHORIZED !== "false",
+          ca: sslCa,
+          rejectUnauthorized: true,
         }
       : false,
 });
