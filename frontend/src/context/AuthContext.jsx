@@ -11,7 +11,6 @@ import {
   loginService,
   logoutService,
 } from '../features/authentication/services/auth.service.js'
-import { tokenStorage } from '../services/storage/token-storage.js'
 
 const AuthContext = createContext(null)
 
@@ -23,11 +22,6 @@ export function AuthProvider({ children }) {
     let active = true
 
     async function restoreSession() {
-      if (!tokenStorage.get()) {
-        setIsLoading(false)
-        return
-      }
-
       try {
         const currentUser = await getCurrentUserService()
 
@@ -35,7 +29,6 @@ export function AuthProvider({ children }) {
           setUser(currentUser)
         }
       } catch {
-        tokenStorage.clear()
 
         if (active) {
           setUser(null)
@@ -60,9 +53,12 @@ export function AuthProvider({ children }) {
     return authenticatedUser
   }, [])
 
-  const logout = useCallback(() => {
-    logoutService()
-    setUser(null)
+  const logout = useCallback(async () => {
+    try {
+      await logoutService()
+    } finally {
+      setUser(null)
+    }
   }, [])
 
   const value = useMemo(

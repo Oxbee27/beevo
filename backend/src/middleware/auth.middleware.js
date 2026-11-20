@@ -1,17 +1,20 @@
 import jwt from "jsonwebtoken";
 import pool from "../config/database.js";
+import { getAuthCookie } from "../utils/auth-cookie.js";
 
 export async function authenticateToken(req, res, next) {
   const authorization = req.headers.authorization;
+  const bearerToken = authorization?.startsWith("Bearer ")
+    ? authorization.slice(7)
+    : null;
+  const token = bearerToken || getAuthCookie(req);
 
-  if (!authorization?.startsWith("Bearer ")) {
+  if (!token) {
     return res.status(401).json({
       success: false,
       message: "Please log in to continue.",
     });
   }
-
-  const token = authorization.slice(7);
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET, {

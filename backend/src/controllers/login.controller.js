@@ -1,6 +1,7 @@
 import { loginSchema } from "../validators/login.validator.js";
 import { loginUser } from "../services/login.service.js";
 import { generateToken } from "../utils/generate-token.js";
+import { setAuthCookie } from "../utils/auth-cookie.js";
 
 export async function loginController(req, res, next) {
   try {
@@ -47,12 +48,14 @@ export async function loginController(req, res, next) {
 
     const user = await loginUser(validation.data);
     const token = generateToken(user);
+    setAuthCookie(res, token);
+
     const { token_version, ...publicUser } = user;
 
     return res.status(200).json({
       success: true,
       message: "Login successful.",
-      data: { user: publicUser, token },
+      data: { user: publicUser },
     });
   } catch (error) {
     if (error.publicMessage) {

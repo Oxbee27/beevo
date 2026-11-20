@@ -16,7 +16,7 @@ describe("Beevo login behaviour", () => {
     mockLoginUser.mockReset();
   });
 
-  it("should return a token when login succeeds", async () => {
+  it("should issue an HTTP-only authentication cookie when login succeeds", async () => {
     mockLoginUser.mockResolvedValue({
       id: 1,
       business_id: 10,
@@ -37,7 +37,10 @@ describe("Beevo login behaviour", () => {
     expect(response.body.success).toBe(true);
     expect(response.body.data.user.email).toBe("test@example.com");
     expect(response.body.data.user).not.toHaveProperty("password_hash");
-    expect(typeof response.body.data.token).toBe("string");
+    expect(response.body.data).not.toHaveProperty("token");
+    expect(response.headers["set-cookie"]).toBeDefined();
+    expect(response.headers["set-cookie"].join(";")).toContain("beevo_session=");
+    expect(response.headers["set-cookie"].join(";")).toContain("HttpOnly");
   });
 
   it.each([

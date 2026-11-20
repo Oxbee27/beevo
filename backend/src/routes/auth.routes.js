@@ -8,11 +8,21 @@ import { resetPasswordController } from "../controllers/reset-password.controlle
 
 import { loginRateLimit } from "../middleware/login-rate-limit.middleware.js";
 import { authenticateToken } from "../middleware/auth.middleware.js";
+import { clearAuthCookie } from "../utils/auth-cookie.js";
 
 const router = Router();
 
 router.post("/register", registerController);
 router.post("/login", loginRateLimit, loginController);
+
+router.post("/logout", (req, res) => {
+  clearAuthCookie(res);
+
+  return res.status(200).json({
+    success: true,
+    message: "You have been logged out successfully.",
+  });
+});
 
 router.patch(
   "/change-password",
