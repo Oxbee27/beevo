@@ -88,7 +88,7 @@ function AddCustomerDialog({ onClose, onCreated }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="add-customer-title"
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-inkberry/10 bg-warm-ivory p-6 shadow-xl sm:p-7"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-inkberry/10 bg-warm-ivory p-4 shadow-xl sm:p-7"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -243,7 +243,7 @@ export default function CustomersPage() {
   }, [customers, search])
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-7 pb-10">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-6 pb-10 sm:space-y-7">
       <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-inkberry/45">
@@ -267,8 +267,8 @@ export default function CustomersPage() {
         </button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <section className="rounded-xl border border-inkberry/10 bg-white p-5">
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2 sm:gap-4">
+        <section className="min-w-0 rounded-xl border border-inkberry/10 bg-white p-4 sm:p-5">
           <p className="text-sm text-inkberry/55">Total customers</p>
           <p className="mt-2 text-3xl font-semibold tabular-nums text-inkberry">
             {loading ? '—' : customers.length.toLocaleString('en-NG')}
@@ -276,7 +276,7 @@ export default function CustomersPage() {
           <p className="mt-1 text-xs text-inkberry/45">Customers in this workspace</p>
         </section>
 
-        <section className="rounded-xl border border-inkberry/10 bg-white p-5">
+        <section className="min-w-0 rounded-xl border border-inkberry/10 bg-white p-4 sm:p-5">
           <p className="text-sm text-inkberry/55">Search directory</p>
           <input
             type="search"
@@ -290,7 +290,7 @@ export default function CustomersPage() {
       </div>
 
       <section className="overflow-hidden rounded-xl border border-inkberry/10 bg-white">
-        <div className="flex items-center justify-between gap-3 border-b border-inkberry/10 px-5 py-4 sm:px-6">
+        <div className="flex items-center justify-between gap-3 border-b border-inkberry/10 px-4 py-4 sm:px-6">
           <div>
             <h2 className="font-semibold text-inkberry">Customer directory</h2>
             <p className="mt-1 text-xs text-inkberry/50">
@@ -349,46 +349,57 @@ export default function CustomersPage() {
             )}
           </div>
         ) : !error && (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[650px] text-left">
-              <thead className="bg-warm-ivory">
-                <tr className="text-xs font-semibold uppercase tracking-wider text-inkberry/50">
-                  <th className="px-6 py-3">Customer</th>
-                  <th className="px-6 py-3">Phone</th>
-                  <th className="px-6 py-3">Email</th>
-                  <th className="px-6 py-3">Date added</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-inkberry/10">
-                {filteredCustomers.map((customer) => (
-                  <tr key={customer.id} className="transition-colors hover:bg-warm-ivory/70">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-peach-sand text-xs font-semibold text-inkberry">
-                          {getInitials(customer.name)}
-                        </div>
-                        <Link
-                          to={`/customers/${customer.id}`}
-                          className="text-sm font-medium text-inkberry hover:underline hover:underline-offset-4"
-                        >
-                          {customer.name}
-                        </Link>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-inkberry/65">
-                      {customer.phone || '—'}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-inkberry/65">
-                      {customer.email || '—'}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-inkberry/55">
-                      {formatDate(customer.created_at)}
-                    </td>
+          <>
+            <div className="divide-y divide-inkberry/10 md:hidden">
+              {filteredCustomers.map((customer) => (
+                <article key={customer.id} className="flex min-w-0 items-start gap-3 px-4 py-4">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-peach-sand text-xs font-semibold text-inkberry">
+                    {getInitials(customer.name)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <Link to={`/customers/${customer.id}`} className="block break-words text-sm font-semibold text-inkberry hover:underline">
+                      {customer.name}
+                    </Link>
+                    <p className="mt-1 break-all text-xs text-inkberry/60">{customer.email || 'No email provided'}</p>
+                    <p className="mt-1 text-xs text-inkberry/60">{customer.phone || 'No phone number'}</p>
+                    <p className="mt-2 text-xs text-inkberry/45">Added {formatDate(customer.created_at)}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[650px] text-left">
+                <thead className="bg-warm-ivory">
+                  <tr className="text-xs font-semibold uppercase tracking-wider text-inkberry/50">
+                    <th className="px-6 py-3">Customer</th>
+                    <th className="px-6 py-3">Phone</th>
+                    <th className="px-6 py-3">Email</th>
+                    <th className="px-6 py-3">Date added</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-inkberry/10">
+                  {filteredCustomers.map((customer) => (
+                    <tr key={customer.id} className="transition-colors hover:bg-warm-ivory/70">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-peach-sand text-xs font-semibold text-inkberry">
+                            {getInitials(customer.name)}
+                          </div>
+                          <Link to={`/customers/${customer.id}`} className="text-sm font-medium text-inkberry hover:underline hover:underline-offset-4">
+                            {customer.name}
+                          </Link>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-inkberry/65">{customer.phone || '—'}</td>
+                      <td className="px-6 py-4 text-sm text-inkberry/65">{customer.email || '—'}</td>
+                      <td className="px-6 py-4 text-sm text-inkberry/55">{formatDate(customer.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </section>
 

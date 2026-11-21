@@ -183,3 +183,65 @@ export async function classifyConversationController(req, res) {
     );
   }
 }
+
+import {
+  listPendingConversations,
+  getPendingConversation,
+} from "../services/pending-conversation-inbox.service.js";
+
+export async function listPendingConversationsController(req, res) {
+  const page = req.query.page === undefined ? 1 : positiveInteger(req.query.page);
+  const limit = req.query.limit === undefined ? 20 : positiveInteger(req.query.limit);
+
+  if (!page || !limit || limit > 100) {
+    return sendError(res, 400, "Please provide valid pagination details.");
+  }
+
+  try {
+    const result = await listPendingConversations(req.user.businessId, {
+      page,
+      limit,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch {
+    return sendError(
+      res,
+      500,
+      "We couldn't load messages awaiting review. Please try again.",
+    );
+  }
+}
+
+export async function getPendingConversationController(req, res) {
+  const conversationId = positiveInteger(req.params.id);
+
+  if (!conversationId) {
+    return sendError(res, 400, "Please provide a valid conversation ID.");
+  }
+
+  try {
+    const result = await getPendingConversation(
+      req.user.businessId,
+      conversationId,
+    );
+
+    if (!result) {
+      return sendError(res, 404, "This pending conversation could not be found.");
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch {
+    return sendError(
+      res,
+      500,
+      "We couldn't load this pending conversation. Please try again.",
+    );
+  }
+}

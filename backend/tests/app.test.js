@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
+import jwt from "jsonwebtoken";
 
 vi.mock("../src/config/database.js", () => ({
   default: {
@@ -78,5 +79,78 @@ describe("Beevo API", () => {
     const response = await request(app).get("/follow-ups");
 
     expect(response.status).toBe(401);
+  });
+
+  it("should reject logout without authentication", async () => {
+    const response = await request(app).post("/auth/logout");
+
+    expect(response.status).toBe(401);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  it("should revoke existing sessions when logout succeeds", async () => {
+    const secret = process.env.JWT_SECRET || "beevo-test-auth-secret";
+    process.env.JWT_SECRET = secret;
+
+    const token = jwt.sign(
+      {
+        businessId: "41",
+        role: "owner",
+        tokenVersion: 0,
+      },
+      secret,
+      {
+        subject: "41",
+        expiresIn: "5m",
+        algorithm: "HS256",
+      }
+    );
+
+    pool.query
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: [{
+          id: 41,
+          business_id: 41,
+          role: "owner",
+          is_active: true,
+          token_version: 0,
+        }],
+      })
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: [{ id: 41 }],
+      });
+
+    const response = await request(app)
+      .post("/auth/logout")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(pool.query).toHaveBeenCalledTimes(2);
+    expect(pool.query.mock.calls[1][0]).toContain(
+      "token_version = token_version + 1"
+    );
+
+    pool.query.mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [{
+        id: 41,
+        business_id: 41,
+        role: "owner",
+        is_active: true,
+        token_version: 1,
+      }],
+    });
+
+    const staleSession = await request(app)
+      .get("/auth/me")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(staleSession.status).toBe(401);
+    expect(staleSession.body.message).toBe(
+      "Your session has expired. Please log in again."
+    );
   });
 });

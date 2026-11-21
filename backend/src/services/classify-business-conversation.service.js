@@ -57,6 +57,9 @@ export async function classifyBusinessConversation({
       }
     }
 
+    const previousClassification =
+      conversationResult.rows[0].classification_status;
+
     const updateResult = await client.query(
       `UPDATE business_conversations
        SET classification_status = $3,
@@ -75,6 +78,56 @@ export async function classifyBusinessConversation({
         preserveCustomer,
       ],
     );
+
+    if (classification === "business") {
+      // The conversation must be business-classified before insertion:
+      // migration 009 enforces that condition on conversation_messages.
+      // Only pending messages from the unclassified state are transferred.
+      if (previousClassification === "unclassified") {
+        await client.query(
+          `INSERT INTO conversation_messages (
+             business_id,
+             conversation_id,
+             channel_connection_id,
+             direction,
+             provider_message_id,
+             message_type,
+             body,
+             delivery_status,
+             received_at
+           )
+           SELECT
+             business_id,
+             conversation_id,
+             channel_connection_id,
+             'inbound',
+             provider_message_id,
+             message_type,
+             body,
+             'received',
+             received_at
+           FROM pending_conversation_messages
+           WHERE business_id = $1 AND conversation_id = $2
+           ON CONFLICT (channel_connection_id, provider_message_id)
+           WHERE provider_message_id IS NOT NULL
+           DO NOTHING`,
+          [businessId, conversationId],
+        );
+      }
+
+      await client.query(
+        `DELETE FROM pending_conversation_messages
+         WHERE business_id = $1 AND conversation_id = $2`,
+        [businessId, conversationId],
+      );
+    } else {
+      // Exclusion permanently removes held content.
+      await client.query(
+        `DELETE FROM pending_conversation_messages
+         WHERE business_id = $1 AND conversation_id = $2`,
+        [businessId, conversationId],
+      );
+    }
 
     await client.query("COMMIT");
 

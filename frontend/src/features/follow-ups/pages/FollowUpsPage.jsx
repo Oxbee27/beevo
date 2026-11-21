@@ -140,8 +140,8 @@ export default function FollowUpsPage() {
   }
 
   return (
-    <section className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+    <section className="w-full min-w-0 space-y-5 pb-10 sm:space-y-6">
+      <div className="flex min-w-0 flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <p className="text-xs font-bold uppercase tracking-wider text-inkberry/45">
             Customer relationships
@@ -157,7 +157,7 @@ export default function FollowUpsPage() {
             setError('')
             setShowForm(true)
           }}
-          className="rounded-xl bg-inkberry px-5 py-3 text-sm font-semibold text-warm-ivory transition hover:bg-inkberry/90"
+          className="w-full rounded-xl bg-inkberry px-5 py-3 text-sm font-semibold text-warm-ivory transition hover:bg-inkberry/90 sm:w-auto"
         >
           Schedule follow-up
         </button>
@@ -205,18 +205,18 @@ export default function FollowUpsPage() {
               {filteredFollowUps.length} record{filteredFollowUps.length === 1 ? '' : 's'}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search follow-ups..."
               aria-label="Search follow-ups"
-              className="min-w-0 rounded-xl border border-inkberry/15 bg-warm-ivory/50 px-3 py-2 text-sm text-inkberry outline-none placeholder:text-inkberry/40 focus:border-inkberry/40"
+              className="w-full min-w-0 flex-1 rounded-xl border border-inkberry/15 bg-warm-ivory/50 px-3 py-3 text-sm text-inkberry outline-none placeholder:text-inkberry/40 focus:border-inkberry/40"
             />
             <button
               type="button"
               onClick={loadData}
-              className="rounded-xl border border-inkberry/15 px-3 py-2 text-sm font-medium text-inkberry hover:bg-warm-ivory"
+              className="w-full rounded-xl border border-inkberry/15 px-3 py-3 text-sm font-medium text-inkberry hover:bg-warm-ivory sm:w-auto"
             >
               Refresh
             </button>
@@ -259,12 +259,12 @@ export default function FollowUpsPage() {
                   </div>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
                   <select
                     aria-label={`Update status for follow-up ${item.id}`}
                     value={item.status}
                     onChange={(event) => handleStatusChange(item.id, event.target.value)}
-                    className="rounded-lg border border-inkberry/15 bg-white px-3 py-2 text-xs text-inkberry outline-none focus:border-inkberry/40"
+                    className="w-full rounded-lg border border-inkberry/15 bg-white px-3 py-3 text-xs text-inkberry outline-none focus:border-inkberry/40 sm:w-auto"
                   >
                     <option value="pending">Pending</option>
                     <option value="completed">Completed</option>
@@ -286,7 +286,7 @@ export default function FollowUpsPage() {
 
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-inkberry/40 p-4">
-          <div role="dialog" aria-modal="true" aria-labelledby="follow-up-form-title" className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-warm-ivory p-6 shadow-xl">
+          <div role="dialog" aria-modal="true" aria-labelledby="follow-up-form-title" className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-warm-ivory p-4 shadow-xl sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 id="follow-up-form-title" className="text-xl font-bold text-inkberry">
@@ -364,7 +364,7 @@ export default function FollowUpsPage() {
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-2">
+              <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end sm:gap-3">
                 <button
                   type="button"
                   onClick={() => setShowForm(false)}

@@ -84,4 +84,52 @@ describe("Production environment validation", () => {
       }),
     ).toThrow("DB_SSL_CA_BASE64 must contain a valid PEM certificate");
   });
+
+  it("rejects an invalid JWT expiration format", () => {
+    expect(() =>
+      validateProductionEnvironment({
+        ...VALID_PRODUCTION_ENV,
+        JWT_EXPIRES_IN: "forever",
+      }),
+    ).toThrow("JWT_EXPIRES_IN must be a positive duration");
+  });
+
+  it("rejects a non-positive cookie lifetime", () => {
+    expect(() =>
+      validateProductionEnvironment({
+        ...VALID_PRODUCTION_ENV,
+        JWT_COOKIE_MAX_AGE_MS: "0",
+      }),
+    ).toThrow("JWT_COOKIE_MAX_AGE_MS must be a positive integer");
+  });
+
+  it("rejects a cookie lifetime longer than the JWT lifetime", () => {
+    expect(() =>
+      validateProductionEnvironment({
+        ...VALID_PRODUCTION_ENV,
+        JWT_EXPIRES_IN: "15m",
+        JWT_COOKIE_MAX_AGE_MS: "3600000",
+      }),
+    ).toThrow("JWT_COOKIE_MAX_AGE_MS must not exceed the JWT lifetime");
+  });
+
+  it("rejects an unsupported cookie SameSite setting", () => {
+    expect(() =>
+      validateProductionEnvironment({
+        ...VALID_PRODUCTION_ENV,
+        AUTH_COOKIE_SAME_SITE: "invalid",
+      }),
+    ).toThrow("AUTH_COOKIE_SAME_SITE must be lax, strict, or none");
+  });
+
+  it("accepts matching custom JWT and cookie lifetimes", () => {
+    expect(() =>
+      validateProductionEnvironment({
+        ...VALID_PRODUCTION_ENV,
+        JWT_EXPIRES_IN: "15m",
+        JWT_COOKIE_MAX_AGE_MS: "900000",
+        AUTH_COOKIE_SAME_SITE: "none",
+      }),
+    ).not.toThrow();
+  });
 });

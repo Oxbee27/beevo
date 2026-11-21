@@ -12,7 +12,7 @@ export default function Topbar() {
   }
 
   return (
-    <header className="sticky top-0 z-20 flex min-h-[68px] items-center justify-between border-b border-inkberry/10 bg-warm-ivory px-4 sm:px-5 md:min-h-[76px] md:px-9">
+    <header className="sticky top-0 z-30 flex min-h-[68px] items-center justify-between border-b border-inkberry/10 bg-warm-ivory px-4 sm:px-5 md:min-h-[76px] md:px-9">
       <div className="min-w-0">
         <p className="text-xs font-medium text-inkberry/50">
           Business workspace
@@ -34,7 +34,7 @@ export default function Topbar() {
         <button
           type="button"
           onClick={handleLogout}
-          className="rounded-lg border border-inkberry/15 px-3 py-2.5 text-sm font-semibold text-inkberry transition-colors hover:bg-peach-sand sm:px-4"
+          className="rounded-lg border border-inkberry/15 px-3 py-2.5 text-xs font-semibold text-inkberry transition-colors hover:bg-peach-sand sm:px-4 sm:text-sm"
         >
           Log out
         </button>

@@ -1,9 +1,10 @@
 import { useState } from 'react'
+import { GoogleLogin } from '@react-oauth/google'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext.jsx'
 
 export default function LoginPage() {
-  const { login } = useAuth()
+  const { login, googleLogin } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -17,6 +18,27 @@ export default function LoginPage() {
   function updateField(event) {
     setForm({ ...form, [event.target.name]: event.target.value })
     setError('')
+  }
+
+  async function handleGoogleSuccess(response) {
+    setError('')
+
+    if (!response?.credential) {
+      setError('Google sign-in could not be completed. Please try again.')
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      await googleLogin(response.credential)
+      const destination = location.state?.from?.pathname || '/'
+      navigate(destination, { replace: true })
+    } catch (err) {
+      setError(err.message || 'Google sign-in failed. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleSubmit(event) {
@@ -135,6 +157,26 @@ export default function LoginPage() {
               {loading ? 'Signing you in...' : 'Sign in'}
             </button>
           </form>
+
+          {import.meta.env.VITE_GOOGLE_CLIENT_ID && (
+            <div className="mt-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="h-px flex-1 bg-inkberry/10" />
+                <span className="text-xs text-inkberry/45">OR</span>
+                <div className="h-px flex-1 bg-inkberry/10" />
+              </div>
+
+              <div className="flex justify-center">
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={() => setError('Google sign-in could not be completed. Please try again.')}
+                  text="continue_with"
+                  shape="rectangular"
+                  width="320"
+                />
+              </div>
+            </div>
+          )}
 
           <p className="mt-7 text-center text-sm text-inkberry/60">
             New to Beevo?{' '}

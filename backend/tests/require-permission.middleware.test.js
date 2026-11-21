@@ -148,11 +148,21 @@ describe("requirePermission middleware", () => {
 });
 
 describe("conversation and communications route permissions", () => {
-  it("protects conversation reads and classification with dedicated permissions", () => {
+  it("keeps approved conversation reads permission-based and restricts inbox review to owners", () => {
     const routes = readRoute("conversations.routes.js");
 
     expect(routes).toContain('requirePermission("conversations.view")');
-    expect(routes).toContain('requirePermission("conversations.edit")');
+
+    // Pending message content and classification are owner-only.
+    expect(routes).toContain('requireOwner');
+    expect(routes).toContain('"/inbox"');
+    expect(routes).toContain('"/inbox/:id"');
+    expect(routes).toContain('"/:id/classification"');
+
+    // Classification must not be granted to staff through conversations.edit.
+    expect(routes).not.toContain(
+      'router.patch(\n  "/:id/classification",\n  requirePermission("conversations.edit")',
+    );
   });
 
   it("protects communication reads and message actions with dedicated permissions", () => {

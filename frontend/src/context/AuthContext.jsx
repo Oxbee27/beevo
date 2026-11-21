@@ -9,6 +9,7 @@ import {
 import {
   getCurrentUserService,
   loginService,
+  googleLoginService,
   logoutService,
 } from '../features/authentication/services/auth.service.js'
 
@@ -53,6 +54,12 @@ export function AuthProvider({ children }) {
     return authenticatedUser
   }, [])
 
+  const googleLogin = useCallback(async (credential) => {
+    const authenticatedUser = await googleLoginService(credential)
+    setUser(authenticatedUser)
+    return authenticatedUser
+  }, [])
+
   const logout = useCallback(async () => {
     try {
       await logoutService()
@@ -67,9 +74,10 @@ export function AuthProvider({ children }) {
       isLoading,
       isAuthenticated: Boolean(user),
       login,
+      googleLogin,
       logout,
     }),
-    [user, isLoading, login, logout],
+    [user, isLoading, login, googleLogin, logout],
   )
 
   return (

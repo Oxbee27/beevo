@@ -28,7 +28,7 @@ export async function archiveProduct(id) {
 
 export async function getProductInterests(productId) {
   const result = await apiRequest(`/products/${productId}/interests`)
-  return result.data.interests || []
+  return result.interests || []
 }
 
 export async function addProductInterest(productId, customerId) {
@@ -36,7 +36,7 @@ export async function addProductInterest(productId, customerId) {
     method: 'POST',
     body: JSON.stringify({ customerId: Number(customerId) }),
   })
-  return result.data.interest
+  return result.interest
 }
 
 export async function updateProductInterest(productId, interestId, status) {
@@ -47,5 +47,5 @@ export async function updateProductInterest(productId, interestId, status) {
       body: JSON.stringify({ status }),
     },
   )
-  return result.data.interest
+  return result.interest
 }

@@ -47,7 +47,7 @@ function Modal({ title, subtitle, onClose, children, wide = false }) {
       <section
         role="dialog"
         aria-modal="true"
-        className={`max-h-[90vh] w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} overflow-y-auto rounded-2xl border border-inkberry/10 bg-warm-ivory p-6 shadow-xl sm:p-7`}
+        className={`max-h-[90vh] w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} overflow-y-auto rounded-2xl border border-inkberry/10 bg-warm-ivory p-4 shadow-xl sm:p-7`}
       >
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
@@ -414,11 +414,11 @@ export default function TeamPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-7">
-      <header className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+    <div className="mx-auto w-full min-w-0 max-w-6xl space-y-5 pb-10 sm:space-y-7">
+      <header className="flex min-w-0 flex-col justify-between gap-5 sm:flex-row sm:items-end">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-inkberry/45">Business workspace</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-inkberry">Team management</h1>
+          <h1 className="mt-2 break-words text-2xl font-semibold tracking-tight text-inkberry sm:text-3xl">Team management</h1>
           <p className="mt-2 max-w-xl text-sm leading-6 text-inkberry/60">Manage the people who help run your business and control what they can access.</p>
         </div>
         <button
@@ -433,14 +433,14 @@ export default function TeamPage() {
               setShowRoleDialog(true)
             }
           }}
-          className={primaryButton}
+          className={`${primaryButton} w-full sm:w-auto`}
         >
           {activeTab === 'staff' ? 'Add staff member' : 'Create role'}
         </button>
       </header>
 
-      <div className="flex gap-2 border-b border-inkberry/10">
-        <button type="button" onClick={() => { setActiveTab('staff'); setSearch(''); setError(''); setNotice('') }} className={`border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${activeTab === 'staff' ? 'border-inkberry text-inkberry' : 'border-transparent text-inkberry/50 hover:text-inkberry'}`}>
+      <div className="flex min-w-0 gap-2 overflow-x-auto border-b border-inkberry/10">
+        <button type="button" onClick={() => { setActiveTab('staff'); setSearch(''); setError(''); setNotice('') }} className={`shrink-0 whitespace-nowrap border-b-2 px-3 py-3 text-sm font-semibold transition-colors sm:px-4 ${activeTab === 'staff' ? 'border-inkberry text-inkberry' : 'border-transparent text-inkberry/50 hover:text-inkberry'}`}>
           Staff <span className="ml-1 text-xs text-inkberry/45">{staff.length}</span>
         </button>
         <button type="button" onClick={() => { setActiveTab('roles'); setSearch(''); setError(''); setNotice('') }} className={`border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${activeTab === 'roles' ? 'border-inkberry text-inkberry' : 'border-transparent text-inkberry/50 hover:text-inkberry'}`}>
@@ -473,12 +473,12 @@ export default function TeamPage() {
           ) : (
             <div className="divide-y divide-inkberry/10">
               {filteredStaff.map((member) => (
-                <article key={member.id} className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+                <article key={member.id} className="flex min-w-0 flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-peach-sand text-sm font-semibold text-inkberry">{initials(member.name)}</div>
                     <div className="min-w-0">
-                      <h3 className="truncate font-semibold text-inkberry">{member.name}</h3>
-                      <p className="mt-0.5 truncate text-sm text-inkberry/55">{member.email}</p>
+                      <h3 className="break-words font-semibold text-inkberry">{member.name}</h3>
+                      <p className="mt-0.5 break-all text-sm text-inkberry/55">{member.email}</p>
                       <p className="mt-1 text-xs text-inkberry/45">{member.role_name || 'No custom role'} · Added {formatDate(member.created_at)}</p>
                     </div>
                   </div>
@@ -512,14 +512,14 @@ export default function TeamPage() {
           ) : (
             <div className="divide-y divide-inkberry/10">
               {roles.map((role) => (
-                <article key={role.id} className="p-5">
+                <article key={role.id} className="min-w-0 p-4 sm:p-5">
                   <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="font-semibold text-inkberry">{role.name}</h3>
                         <span className="rounded-full bg-peach-sand/60 px-2.5 py-1 text-xs text-inkberry/65">{role.assigned_staff_count || 0} assigned</span>
                       </div>
-                      <p className="mt-1 text-sm text-inkberry/55">{role.description || 'No description provided.'}</p>
+                      <p className="mt-1 break-words text-sm text-inkberry/55">{role.description || 'No description provided.'}</p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {(role.permissions || []).slice(0, 6).map((permission) => (
                           <span key={permission} className="rounded-md border border-inkberry/10 bg-white px-2 py-1 text-xs text-inkberry/60">{permission}</span>
@@ -528,7 +528,7 @@ export default function TeamPage() {
                         {(role.permissions || []).length === 0 && <span className="text-xs text-inkberry/45">No permissions assigned</span>}
                       </div>
                     </div>
-                    <div className="flex shrink-0 gap-2">
+                    <div className="flex flex-wrap gap-2 sm:shrink-0">
                       <button type="button" onClick={() => { setEditingRole(role); setShowRoleDialog(true) }} className={secondaryButton}>Edit</button>
                       <button type="button" disabled={workingId === role.id} onClick={() => removeRole(role)} className="rounded-lg px-3 py-2.5 text-sm font-medium text-inkberry/65 hover:bg-peach-sand/50 disabled:opacity-50">{workingId === role.id ? 'Deleting...' : 'Delete'}</button>
                     </div>

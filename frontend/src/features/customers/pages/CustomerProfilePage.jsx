@@ -70,7 +70,7 @@ function PreferenceCard({ channel, preference, onSave }) {
     source.trim() === (preference.consent_source || '')
 
   return (
-    <section className="rounded-xl border border-inkberry/10 bg-white p-5">
+    <section className="rounded-xl border border-inkberry/10 bg-white p-4 sm:p-5">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
         <div>
           <h3 className="font-semibold text-inkberry">{channel.title}</h3>
@@ -136,7 +136,7 @@ function PreferenceCard({ channel, preference, onSave }) {
           type="button"
           onClick={handleSave}
           disabled={saving || unchanged}
-          className="rounded-lg bg-inkberry px-4 py-2.5 text-sm font-medium text-warm-ivory hover:bg-inkberry/90 disabled:cursor-not-allowed disabled:opacity-40"
+          className="w-full rounded-lg bg-inkberry px-4 py-3 text-sm font-medium text-warm-ivory hover:bg-inkberry/90 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
         >
           {saving ? 'Saving...' : 'Save preference'}
         </button>
@@ -284,17 +284,17 @@ export default function CustomerProfilePage() {
   if (!customer) return null
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-7 pb-10">
+    <div className="mx-auto w-full min-w-0 max-w-5xl space-y-5 pb-10 sm:space-y-7">
       <Link to="/customers" className="inline-flex text-sm font-medium text-inkberry/60 hover:text-inkberry">
         ← Back to customers
       </Link>
 
-      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+      <header className="flex min-w-0 flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-inkberry/45">
             Customer profile
           </p>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-inkberry sm:text-3xl">
+          <h1 className="mt-2 break-words text-2xl font-semibold tracking-tight text-inkberry sm:text-3xl">
             {customer.name}
           </h1>
           <p className="mt-2 text-sm text-inkberry/55">
@@ -305,7 +305,7 @@ export default function CustomerProfilePage() {
           type="button"
           onClick={() => setShowDeleteDialog(true)}
           disabled={deleting}
-          className="w-fit rounded-lg border border-inkberry/15 px-4 py-2.5 text-sm font-medium text-inkberry hover:bg-peach-sand/40 disabled:opacity-50"
+          className="w-full rounded-lg border border-inkberry/15 px-4 py-3 text-sm font-medium text-inkberry hover:bg-peach-sand/40 disabled:opacity-50 sm:w-fit"
         >
           {deleting ? 'Deleting...' : 'Delete customer'}
         </button>
@@ -314,8 +314,8 @@ export default function CustomerProfilePage() {
       {error && <p role="alert" className="rounded-lg bg-peach-sand/60 p-3 text-sm text-inkberry">{error}</p>}
       {message && <p role="status" className="rounded-lg bg-peach-sand/60 p-3 text-sm text-inkberry">{message}</p>}
 
-      <section className="rounded-xl border border-inkberry/10 bg-white p-5 sm:p-6">
-        <div className="flex items-center justify-between gap-4">
+      <section className="min-w-0 rounded-xl border border-inkberry/10 bg-white p-4 sm:p-6">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center sm:gap-4">
           <div>
             <h2 className="font-semibold text-inkberry">Customer details</h2>
             <p className="mt-1 text-sm text-inkberry/50">Contact information and internal notes.</p>
@@ -328,7 +328,7 @@ export default function CustomerProfilePage() {
                 setMessage('')
                 setEditing(true)
               }}
-              className="rounded-lg border border-inkberry/15 px-4 py-2 text-sm font-medium text-inkberry hover:bg-warm-ivory"
+              className="w-full rounded-lg border border-inkberry/15 px-4 py-3 text-sm font-medium text-inkberry hover:bg-warm-ivory sm:w-auto"
             >
               Edit details
             </button>
@@ -364,10 +364,10 @@ export default function CustomerProfilePage() {
                   notes: customer.notes || '',
                 })
                 setEditing(false)
-              }} className="rounded-lg border border-inkberry/15 px-4 py-2.5 text-sm font-medium text-inkberry">
+              }} className="w-full rounded-lg border border-inkberry/15 px-4 py-3 text-sm font-medium text-inkberry sm:w-auto">
                 Cancel
               </button>
-              <button type="submit" disabled={saving} className="rounded-lg bg-inkberry px-5 py-2.5 text-sm font-semibold text-warm-ivory disabled:opacity-50">
+              <button type="submit" disabled={saving} className="w-full rounded-lg bg-inkberry px-5 py-3 text-sm font-semibold text-warm-ivory disabled:opacity-50 sm:w-auto">
                 {saving ? 'Saving...' : 'Save changes'}
               </button>
             </div>
@@ -376,11 +376,11 @@ export default function CustomerProfilePage() {
           <dl className="mt-6 grid gap-5 sm:grid-cols-2">
             <div>
               <dt className="text-xs text-inkberry/45">Email address</dt>
-              <dd className="mt-1 break-words text-sm text-inkberry">{customer.email || 'Not provided'}</dd>
+              <dd className="mt-1 break-all text-sm text-inkberry">{customer.email || 'Not provided'}</dd>
             </div>
             <div>
               <dt className="text-xs text-inkberry/45">Phone number</dt>
-              <dd className="mt-1 text-sm text-inkberry">{customer.phone || 'Not provided'}</dd>
+              <dd className="mt-1 break-words text-sm text-inkberry">{customer.phone || 'Not provided'}</dd>
             </div>
             <div className="sm:col-span-2">
               <dt className="text-xs text-inkberry/45">Notes</dt>

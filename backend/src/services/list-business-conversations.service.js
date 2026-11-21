@@ -11,7 +11,11 @@ export async function listBusinessConversations(businessId, filters = {}) {
     search,
   } = filters;
 
-  const conditions = ["c.business_id = $1"];
+  // Normal conversation endpoints must never expose unclassified or excluded records.
+  const conditions = [
+    "c.business_id = $1",
+    "c.classification_status = 'business'",
+  ];
   const values = [businessId];
 
   function addCondition(sql, value) {
@@ -122,7 +126,8 @@ export async function getBusinessConversation(businessId, conversationId) {
        ON bc.id = c.channel_connection_id
       AND bc.business_id = c.business_id
      WHERE c.business_id = $1
-       AND c.id = $2`,
+       AND c.id = $2
+       AND c.classification_status = 'business'`,
     [businessId, conversationId],
   );
 

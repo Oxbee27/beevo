@@ -83,7 +83,7 @@ function ProductDialog({ product, onClose, onSaved }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="product-dialog-title"
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-inkberry/10 bg-warm-ivory p-6 shadow-xl sm:p-7"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-inkberry/10 bg-warm-ivory p-4 shadow-xl sm:p-7"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -284,7 +284,7 @@ function InterestsDialog({ product, onClose }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="interests-title"
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-inkberry/10 bg-warm-ivory p-6 shadow-xl sm:p-7"
+        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-inkberry/10 bg-warm-ivory p-4 shadow-xl sm:p-7"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -323,7 +323,7 @@ function InterestsDialog({ product, onClose }) {
           <button
             type="submit"
             disabled={!customerId || saving}
-            className="rounded-lg bg-inkberry px-5 py-3 text-sm font-semibold text-warm-ivory disabled:opacity-50"
+            className="w-full rounded-lg bg-inkberry px-5 py-3 text-sm font-semibold text-warm-ivory disabled:opacity-50 sm:w-auto"
           >
             {saving ? 'Adding...' : 'Add to list'}
           </button>
@@ -392,7 +392,7 @@ function InterestsDialog({ product, onClose }) {
           )}
         </div>
 
-        <div className="mt-6 flex justify-end">
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={onClose}
@@ -471,8 +471,8 @@ export default function ProductsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+    <div className="w-full min-w-0 space-y-5 pb-10 sm:space-y-6">
+      <div className="flex min-w-0 flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-inkberry/45">
             Inventory management
@@ -485,7 +485,7 @@ export default function ProductsPage() {
         <button
           type="button"
           onClick={openCreate}
-          className="rounded-lg bg-inkberry px-5 py-3 text-sm font-semibold text-warm-ivory hover:bg-inkberry/90"
+          className="w-full rounded-lg bg-inkberry px-5 py-3 text-sm font-semibold text-warm-ivory hover:bg-inkberry/90 sm:w-auto"
         >
           Add product
         </button>
@@ -503,7 +503,7 @@ export default function ProductsPage() {
         </p>
       )}
 
-      <div className="flex flex-col gap-3 rounded-xl border border-inkberry/10 bg-white/70 p-4 sm:flex-row sm:items-center">
+      <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-inkberry/10 bg-white/70 p-4 sm:flex-row sm:items-center">
         <input
           type="search"
           value={search}
@@ -512,7 +512,7 @@ export default function ProductsPage() {
           aria-label="Search products"
           className="min-w-0 flex-1 rounded-lg border border-inkberry/15 bg-white px-3.5 py-3 text-sm text-inkberry outline-none placeholder:text-inkberry/35 focus:border-inkberry/60"
         />
-        <label className="flex items-center gap-2 text-sm text-inkberry/70">
+        <label className="flex min-h-10 items-center gap-2 text-sm text-inkberry/70">
           <input
             type="checkbox"
             checked={includeArchived}
@@ -545,7 +545,7 @@ export default function ProductsPage() {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="bg-peach-sand/30">
                 <tr className="text-xs uppercase tracking-wide text-inkberry/55">
@@ -624,6 +624,82 @@ export default function ProductsPage() {
             </table>
           </div>
         )}
+
+        {!loading && filteredProducts.length > 0 && (
+          <div className="divide-y divide-inkberry/10 md:hidden">
+            {filteredProducts.map((product) => {
+              const archived = product.is_active === false
+              const quantity = Number(product.stock_quantity ?? 0)
+
+              return (
+                <article key={product.id} className="min-w-0 space-y-3 p-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <h3 className="min-w-0 break-words font-semibold text-inkberry">
+                        {product.name}
+                      </h3>
+                      <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
+                        archived
+                          ? 'bg-inkberry/10 text-inkberry/60'
+                          : quantity === 0
+                            ? 'bg-peach-sand text-inkberry'
+                            : 'bg-[#e9f1e9] text-[#365b3d]'
+                      }`}>
+                        {archived ? 'Archived' : quantity === 0 ? 'Out of stock' : 'In stock'}
+                      </span>
+                    </div>
+                    {product.description && (
+                      <p className="mt-1 break-words text-sm leading-5 text-inkberry/55">
+                        {product.description}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 rounded-lg bg-peach-sand/25 p-3">
+                    <div className="min-w-0">
+                      <p className="text-xs text-inkberry/50">SKU</p>
+                      <p className="mt-1 break-all text-sm font-medium text-inkberry">
+                        {product.sku || '—'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-inkberry/50">Stock quantity</p>
+                      <p className="mt-1 text-sm font-semibold tabular-nums text-inkberry">
+                        {quantity.toLocaleString('en-NG')}
+                      </p>
+                    </div>
+                  </div>
+
+                  {!archived && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setInterestsProduct(product)}
+                        className="rounded-lg border border-inkberry/15 px-3 py-2.5 text-xs font-medium text-inkberry hover:bg-peach-sand/40"
+                      >
+                        Waiting list
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEdit(product)}
+                        className="rounded-lg border border-inkberry/15 px-3 py-2.5 text-xs font-medium text-inkberry hover:bg-peach-sand/40"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setArchiving(product)}
+                        className="col-span-2 rounded-lg border border-inkberry/15 px-3 py-2.5 text-xs font-medium text-inkberry/65 hover:bg-peach-sand/40"
+                      >
+                        Archive product
+                      </button>
+                    </div>
+                  )}
+                </article>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       <p className="text-xs text-inkberry/50">
@@ -651,7 +727,7 @@ export default function ProductsPage() {
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="archive-title"
-            className="w-full max-w-md rounded-2xl bg-warm-ivory p-6 shadow-xl"
+            className="w-full max-w-md rounded-2xl bg-warm-ivory p-4 shadow-xl sm:p-6"
           >
             <h2 id="archive-title" className="text-lg font-semibold text-inkberry">
               Archive this product?
@@ -660,18 +736,18 @@ export default function ProductsPage() {
               <strong>{archiving.name}</strong> will be removed from your active product list.
               Pending restock campaigns and messages for this product will be cancelled.
             </p>
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
                 type="button"
                 onClick={() => setArchiving(null)}
-                className="rounded-lg border border-inkberry/15 px-4 py-2.5 text-sm font-medium text-inkberry"
+                className="w-full rounded-lg border border-inkberry/15 px-4 py-2.5 text-sm font-medium text-inkberry sm:w-auto"
               >
                 Keep product
               </button>
               <button
                 type="button"
                 onClick={handleArchive}
-                className="rounded-lg bg-inkberry px-4 py-2.5 text-sm font-semibold text-warm-ivory"
+                className="w-full rounded-lg bg-inkberry px-4 py-2.5 text-sm font-semibold text-warm-ivory sm:w-auto"
               >
                 Confirm archive
               </button>

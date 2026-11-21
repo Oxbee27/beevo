@@ -189,7 +189,7 @@ export default function FollowUpProfilePage() {
   }
 
   return (
-    <section className="space-y-6">
+    <section className="w-full min-w-0 space-y-5 pb-10 sm:space-y-6">
       <div>
         <Link to="/follow-ups" className="text-sm font-medium text-inkberry/60 hover:text-inkberry">
           ← Back to follow-ups
@@ -199,7 +199,7 @@ export default function FollowUpProfilePage() {
             <p className="text-xs font-bold uppercase tracking-wider text-inkberry/45">
               Follow-up details
             </p>
-            <h1 className="mt-1 text-2xl font-bold text-inkberry">
+            <h1 className="mt-1 break-words text-2xl font-bold text-inkberry">
               {followUp.customer_name || 'Customer'}
             </h1>
           </div>
@@ -223,13 +223,13 @@ export default function FollowUpProfilePage() {
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl border border-inkberry/10 bg-white p-5">
+      <div className="grid min-w-0 gap-4 sm:gap-6 lg:grid-cols-2">
+        <div className="min-w-0 rounded-2xl border border-inkberry/10 bg-white p-4 sm:p-5">
           <h2 className="text-lg font-semibold text-inkberry">Follow-up information</h2>
           <div className="mt-4 space-y-3 text-sm">
             <div>
               <p className="text-xs text-inkberry/50">Customer</p>
-              <p className="mt-1 font-medium text-inkberry">{followUp.customer_name || '—'}</p>
+              <p className="mt-1 break-words font-medium text-inkberry">{followUp.customer_name || '—'}</p>
             </div>
             <div>
               <p className="text-xs text-inkberry/50">Related enquiry</p>
@@ -237,7 +237,7 @@ export default function FollowUpProfilePage() {
             </div>
             <div>
               <p className="text-xs text-inkberry/50">Created</p>
-              <p className="mt-1 text-inkberry">{formatDate(followUp.created_at)}</p>
+              <p className="mt-1 break-words text-inkberry">{formatDate(followUp.created_at)}</p>
             </div>
             <div>
               <p className="text-xs text-inkberry/50">Last updated</p>
@@ -310,7 +310,7 @@ export default function FollowUpProfilePage() {
             <button
               type="submit"
               disabled={saving}
-              className="rounded-xl bg-inkberry px-5 py-3 text-sm font-semibold text-warm-ivory hover:bg-inkberry/90 disabled:opacity-50"
+              className="w-full rounded-xl bg-inkberry px-5 py-3 text-sm font-semibold text-warm-ivory hover:bg-inkberry/90 disabled:opacity-50 sm:w-auto"
             >
               {saving ? 'Saving...' : 'Save changes'}
             </button>
@@ -328,7 +328,7 @@ export default function FollowUpProfilePage() {
           The follow-up must also be pending.
         </p>
 
-        <form onSubmit={handleScheduleMessage} className="mt-5 grid gap-4 md:grid-cols-2">
+        <form onSubmit={handleScheduleMessage} className="mt-5 grid min-w-0 gap-4 md:grid-cols-2">
           <div>
             <label htmlFor="message-channel" className={labelClass}>Channel</label>
             <select
@@ -387,11 +387,11 @@ export default function FollowUpProfilePage() {
             />
           </div>
 
-          <div className="flex items-end">
+          <div className="flex items-end md:col-span-2">
             <button
               type="submit"
               disabled={scheduling || followUp.status !== 'pending'}
-              className="rounded-xl bg-inkberry px-5 py-3 text-sm font-semibold text-warm-ivory hover:bg-inkberry/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full rounded-xl bg-inkberry px-5 py-3 text-sm font-semibold text-warm-ivory hover:bg-inkberry/90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
             >
               {scheduling ? 'Scheduling...' : 'Schedule message'}
             </button>
@@ -419,7 +419,7 @@ export default function FollowUpProfilePage() {
         ) : (
           <div className="divide-y divide-inkberry/10">
             {messages.map((message) => (
-              <article key={message.id} className="space-y-3 p-5">
+              <article key={message.id} className="min-w-0 space-y-3 p-4 sm:p-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-full bg-peach-sand/50 px-3 py-1 text-xs font-semibold capitalize text-inkberry">
@@ -442,9 +442,9 @@ export default function FollowUpProfilePage() {
                 </div>
 
                 {message.subject && (
-                  <p className="font-medium text-inkberry">{message.subject}</p>
+                  <p className="break-words font-medium text-inkberry">{message.subject}</p>
                 )}
-                <p className="whitespace-pre-wrap text-sm leading-6 text-inkberry/75">
+                <p className="break-words whitespace-pre-wrap text-sm leading-6 text-inkberry/75">
                   {message.body}
                 </p>
                 <div className="grid gap-2 text-xs text-inkberry/55 sm:grid-cols-2">

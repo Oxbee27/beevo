@@ -9,6 +9,15 @@ export async function loginService(credentials) {
   return result.data.user;
 }
 
+export async function googleLoginService(credential) {
+  const result = await apiRequest("/auth/google", {
+    method: "POST",
+    body: JSON.stringify({ credential }),
+  });
+
+  return result.data.user;
+}
+
 export async function registerService(details) {
   const result = await apiRequest("/auth/register", {
     method: "POST",

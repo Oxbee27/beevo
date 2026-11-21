@@ -141,11 +141,11 @@ export default function EnquiriesPage() {
   }, {})
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-5 sm:space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <p className="text-sm text-inkberry/55">Sales management</p>
-          <h1 className="mt-1 text-2xl font-bold text-inkberry">Enquiries</h1>
+          <h1 className="mt-1 text-xl font-bold text-inkberry sm:text-2xl">Enquiries</h1>
           <p className="mt-1 text-sm text-inkberry/60">
             Keep track of customer interest and sales opportunities.
           </p>
@@ -158,7 +158,7 @@ export default function EnquiriesPage() {
             setSuccess('')
             setShowCreate(true)
           }}
-          className="rounded-xl bg-inkberry px-5 py-3 text-sm font-semibold text-warm-ivory transition hover:bg-inkberry/90"
+          className="w-full rounded-xl bg-inkberry px-5 py-3 text-sm font-semibold text-warm-ivory transition hover:bg-inkberry/90 sm:w-auto"
         >
           Create enquiry
         </button>
@@ -185,14 +185,14 @@ export default function EnquiriesPage() {
             type="button"
             key={status}
             onClick={() => setStatusFilter(statusFilter === status ? 'all' : status)}
-            className={`rounded-xl border p-4 text-left transition ${
+            className={`min-w-0 rounded-xl border p-3 text-left transition sm:p-4 ${
               statusFilter === status
                 ? 'border-inkberry bg-peach-sand/50'
                 : 'border-inkberry/10 bg-white'
             }`}
           >
             <p className="text-xs capitalize text-inkberry/55">{status}</p>
-            <p className="mt-1 text-2xl font-bold text-inkberry">
+            <p className="mt-1 text-xl font-bold text-inkberry sm:text-2xl">
               {statusCounts[status] || 0}
             </p>
           </button>
@@ -200,7 +200,7 @@ export default function EnquiriesPage() {
       </div>
 
       <section className="overflow-hidden rounded-2xl border border-inkberry/10 bg-white">
-        <div className="flex flex-col gap-3 border-b border-inkberry/10 p-4 sm:flex-row">
+        <div className="flex min-w-0 flex-col gap-3 border-b border-inkberry/10 p-4 sm:flex-row">
           <input
             type="search"
             value={search}
@@ -212,7 +212,7 @@ export default function EnquiriesPage() {
           <select
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value)}
-            className="rounded-xl border border-inkberry/15 bg-warm-ivory px-4 py-3 text-sm text-inkberry outline-none focus:border-inkberry"
+            className="w-full min-w-0 rounded-xl border border-inkberry/15 bg-warm-ivory px-4 py-3 text-sm text-inkberry outline-none focus:border-inkberry sm:w-auto"
           >
             <option value="all">All statuses</option>
             {statuses.map((status) => (
@@ -225,7 +225,7 @@ export default function EnquiriesPage() {
           <button
             type="button"
             onClick={loadData}
-            className="rounded-xl border border-inkberry/15 px-4 py-3 text-sm font-semibold text-inkberry hover:bg-warm-ivory"
+            className="w-full rounded-xl border border-inkberry/15 px-4 py-3 text-sm font-semibold text-inkberry hover:bg-warm-ivory sm:w-auto"
           >
             Refresh
           </button>
@@ -245,45 +245,75 @@ export default function EnquiriesPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left">
-              <thead className="bg-warm-ivory text-xs uppercase tracking-wide text-inkberry/55">
-                <tr>
-                  <th className="px-5 py-4 font-semibold">Enquiry</th>
-                  <th className="px-5 py-4 font-semibold">Customer</th>
-                  <th className="px-5 py-4 font-semibold">Status</th>
-                  <th className="px-5 py-4 font-semibold">Estimated value</th>
-                  <th className="px-5 py-4 font-semibold">Date created</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-inkberry/10">
-                {filteredEnquiries.map((enquiry) => (
-                  <tr key={enquiry.id} className="hover:bg-warm-ivory/60">
-                    <td className="px-5 py-4">
-                      <Link to={`/enquiries/${enquiry.id}`} className="font-semibold text-inkberry hover:underline">{enquiry.subject}</Link>
-                      <p className="mt-1 text-xs text-inkberry/50">
-                        {enquiry.source || 'Source not specified'}
+          <>
+            <div className="divide-y divide-inkberry/10 md:hidden">
+              {filteredEnquiries.map((enquiry) => (
+                <article key={enquiry.id} className="min-w-0 space-y-3 px-4 py-4">
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <Link to={`/enquiries/${enquiry.id}`} className="break-words text-sm font-semibold text-inkberry hover:underline">
+                        {enquiry.subject}
+                      </Link>
+                      <p className="mt-1 break-words text-xs text-inkberry/55">
+                        {enquiry.customer_name || 'Customer not specified'}
                       </p>
-                    </td>
-                    <td className="px-5 py-4 text-sm text-inkberry/75">
-                      {enquiry.customer_name || '—'}
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className={`rounded-full px-3 py-1.5 text-xs font-semibold capitalize ${statusStyles[enquiry.status] || statusStyles.new}`}>
-                        {enquiry.status}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 text-sm text-inkberry/75">
-                      {formatValue(enquiry.estimated_value, enquiry.currency)}
-                    </td>
-                    <td className="px-5 py-4 text-sm text-inkberry/60">
-                      {formatDate(enquiry.created_at)}
-                    </td>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${statusStyles[enquiry.status] || statusStyles.new}`}>
+                      {enquiry.status}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                    <div className="min-w-0">
+                      <p className="text-inkberry/45">Estimated value</p>
+                      <p className="mt-1 break-words font-medium text-inkberry/80">
+                        {formatValue(enquiry.estimated_value, enquiry.currency)}
+                      </p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-inkberry/45">Date created</p>
+                      <p className="mt-1 text-inkberry/75">{formatDate(enquiry.created_at)}</p>
+                    </div>
+                    <div className="col-span-2 min-w-0">
+                      <p className="text-inkberry/45">Source</p>
+                      <p className="mt-1 break-words text-inkberry/75">{enquiry.source || 'Source not specified'}</p>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[760px] text-left">
+                <thead className="bg-warm-ivory text-xs uppercase tracking-wide text-inkberry/55">
+                  <tr>
+                    <th className="px-5 py-4 font-semibold">Enquiry</th>
+                    <th className="px-5 py-4 font-semibold">Customer</th>
+                    <th className="px-5 py-4 font-semibold">Status</th>
+                    <th className="px-5 py-4 font-semibold">Estimated value</th>
+                    <th className="px-5 py-4 font-semibold">Date created</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-inkberry/10">
+                  {filteredEnquiries.map((enquiry) => (
+                    <tr key={enquiry.id} className="hover:bg-warm-ivory/60">
+                      <td className="px-5 py-4">
+                        <Link to={`/enquiries/${enquiry.id}`} className="font-semibold text-inkberry hover:underline">{enquiry.subject}</Link>
+                        <p className="mt-1 text-xs text-inkberry/50">{enquiry.source || 'Source not specified'}</p>
+                      </td>
+                      <td className="px-5 py-4 text-sm text-inkberry/75">{enquiry.customer_name || '—'}</td>
+                      <td className="px-5 py-4">
+                        <span className={`rounded-full px-3 py-1.5 text-xs font-semibold capitalize ${statusStyles[enquiry.status] || statusStyles.new}`}>
+                          {enquiry.status}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4 text-sm text-inkberry/75">{formatValue(enquiry.estimated_value, enquiry.currency)}</td>
+                      <td className="px-5 py-4 text-sm text-inkberry/60">{formatDate(enquiry.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
 
         <div className="border-t border-inkberry/10 px-5 py-3 text-xs text-inkberry/50">
@@ -298,7 +328,7 @@ export default function EnquiriesPage() {
             if (event.target === event.currentTarget && !saving) setShowCreate(false)
           }}
         >
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-warm-ivory p-6 shadow-xl">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-warm-ivory p-4 shadow-xl sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-bold text-inkberry">Create enquiry</h2>

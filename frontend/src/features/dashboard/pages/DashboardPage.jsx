@@ -35,12 +35,12 @@ function Status({ value }) {
 
 function MetricCard({ label, value, note }) {
   return (
-    <article className="rounded-xl border border-inkberry/10 bg-white p-5">
-      <p className="text-sm font-medium text-inkberry/60">{label}</p>
-      <p className="mt-4 text-3xl font-semibold tracking-tight text-inkberry">
+    <article className="min-w-0 rounded-xl border border-inkberry/10 bg-white p-4 sm:p-5">
+      <p className="text-xs font-medium text-inkberry/60 sm:text-sm">{label}</p>
+      <p className="mt-3 text-2xl font-semibold tracking-tight text-inkberry sm:mt-4 sm:text-3xl">
         {value ?? 0}
       </p>
-      <p className="mt-2 text-xs text-inkberry/45">{note}</p>
+      <p className="mt-2 text-[11px] text-inkberry/45 sm:text-xs">{note}</p>
     </article>
   )
 }
@@ -78,7 +78,7 @@ export default function DashboardPage() {
           <p className="text-sm font-medium text-inkberry/50">
             Your business at a glance
           </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-inkberry">
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-inkberry sm:text-3xl">
             Welcome back, {firstName}.
           </h1>
           <p className="mt-2 text-sm text-inkberry/60">
@@ -107,7 +107,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="mt-7 grid grid-cols-2 gap-3 sm:mt-8 sm:gap-4 xl:grid-cols-4">
         <MetricCard
           label="Total customers"
           value={isLoading ? '—' : summary?.totalCustomers}
@@ -130,20 +130,20 @@ export default function DashboardPage() {
         />
       </section>
 
-      <section className="mt-7 grid gap-5 lg:grid-cols-[1.5fr_1fr]">
-        <article className="rounded-xl border border-inkberry/10 bg-white p-5 sm:p-6">
+      <section className="mt-6 grid min-w-0 gap-4 sm:mt-7 sm:gap-5 lg:grid-cols-[1.5fr_1fr]">
+        <article className="min-w-0 rounded-xl border border-inkberry/10 bg-white p-4 sm:p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-inkberry">
+              <h2 className="text-base font-semibold text-inkberry sm:text-lg">
                 Recent enquiries
               </h2>
-              <p className="mt-1 text-sm text-inkberry/50">
+              <p className="mt-1 text-xs text-inkberry/50 sm:text-sm">
                 The latest interest from your customers.
               </p>
             </div>
             <Link
               to="/enquiries"
-              className="text-sm font-semibold text-inkberry underline underline-offset-4"
+              className="shrink-0 text-xs font-semibold text-inkberry underline underline-offset-4 sm:text-sm"
             >
               View all
             </Link>
@@ -189,12 +189,12 @@ export default function DashboardPage() {
           )}
         </article>
 
-        <article className="rounded-xl border border-inkberry/10 bg-white p-5 sm:p-6">
+        <article className="min-w-0 rounded-xl border border-inkberry/10 bg-white p-4 sm:p-6">
           <div>
-            <h2 className="text-lg font-semibold text-inkberry">
+            <h2 className="text-base font-semibold text-inkberry sm:text-lg">
               Upcoming follow-ups
             </h2>
-            <p className="mt-1 text-sm text-inkberry/50">
+            <p className="mt-1 text-xs text-inkberry/50 sm:text-sm">
               Conversations that need your attention.
             </p>
           </div>
@@ -222,7 +222,7 @@ export default function DashboardPage() {
                   <p className="mt-1 text-sm text-inkberry/55">
                     {followUp.enquirySubject || followUp.note || 'Follow-up'}
                   </p>
-                  <p className="mt-2 text-xs text-inkberry/45">
+                  <p className="mt-2 text-[11px] text-inkberry/45 sm:text-xs">
                     Due {formatDate(followUp.dueAt)}
                   </p>
                 </div>
@@ -239,7 +239,7 @@ export default function DashboardPage() {
         </article>
       </section>
 
-      <section className="mt-6 rounded-xl bg-peach-sand p-6 sm:p-7">
+      <section className="mt-5 rounded-xl bg-peach-sand p-5 sm:mt-6 sm:p-7">
         <p className="text-xs font-semibold uppercase tracking-wider text-inkberry/60">
           The Beevo promise
         </p>

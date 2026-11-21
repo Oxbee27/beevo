@@ -217,8 +217,8 @@ function WalletPage() {
   }
 
   return (
-    <div className="space-y-7">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="min-w-0 space-y-6 sm:space-y-7">
+      <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-wider text-inkberry/50">
             Beevo workspace
@@ -259,7 +259,7 @@ function WalletPage() {
         </div>
       )}
 
-      <section className="rounded-2xl border border-inkberry/10 bg-white p-6 shadow-sm sm:p-8">
+      <section className="min-w-0 rounded-2xl border border-inkberry/10 bg-white p-4 shadow-sm sm:p-8">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-medium text-inkberry/60">
@@ -270,7 +270,7 @@ function WalletPage() {
               {loading && !wallet ? (
                 <div className="h-10 w-48 animate-pulse rounded-lg bg-inkberry/10" />
               ) : (
-                <p className="text-3xl font-bold tracking-tight text-inkberry sm:text-4xl">
+                <p className="break-words text-2xl font-bold tracking-tight text-inkberry sm:text-4xl">
                   {formatNaira(wallet?.balanceKobo)}
                 </p>
               )}
@@ -289,7 +289,7 @@ function WalletPage() {
               setFundingOpen(true)
             }}
             disabled={loading || Boolean(error && !wallet)}
-            className="rounded-xl bg-inkberry px-6 py-3 text-sm font-semibold text-white transition hover:bg-inkberry/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-xl bg-inkberry px-6 py-3 text-sm font-semibold text-white transition hover:bg-inkberry/90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
             Fund wallet
           </button>
@@ -297,7 +297,7 @@ function WalletPage() {
       </section>
 
       <section className="overflow-hidden rounded-2xl border border-inkberry/10 bg-white">
-        <div className="flex flex-col gap-2 border-b border-inkberry/10 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="flex min-w-0 flex-col gap-2 border-b border-inkberry/10 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div>
             <h2 className="text-lg font-bold text-inkberry">
               Transaction history
@@ -332,7 +332,7 @@ function WalletPage() {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[720px] text-left text-sm">
                 <thead className="bg-[#F7F3EE] text-xs uppercase tracking-wide text-inkberry/55">
                   <tr>
@@ -381,12 +381,57 @@ function WalletPage() {
               </table>
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-inkberry/10 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <div className="space-y-3 p-4 md:hidden">
+              {transactions.map((transaction) => {
+                const isCredit = String(transaction.type).toLowerCase() === 'credit'
+
+                return (
+                  <article key={transaction.id} className="min-w-0 rounded-xl border border-inkberry/10 bg-white p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold capitalize text-inkberry">
+                          {transaction.type || 'Transaction'}
+                        </p>
+                        <p className="mt-1 break-words text-xs text-inkberry/55">
+                          {transaction.description || 'Wallet transaction'}
+                        </p>
+                      </div>
+                      <p className={`shrink-0 text-right text-sm font-bold ${isCredit ? 'text-green-700' : 'text-inkberry'}`}>
+                        {isCredit ? '+' : '−'}{formatNaira(transaction.amountKobo)}
+                      </p>
+                    </div>
+
+                    <div className="mt-4 space-y-2 border-t border-inkberry/10 pt-3 text-xs">
+                      <div className="flex justify-between gap-3">
+                        <span className="text-inkberry/50">Reference</span>
+                        <span className="max-w-[65%] break-all text-right text-inkberry/75">
+                          {transaction.reference || '—'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-inkberry/50">Date</span>
+                        <span className="text-right text-inkberry/75">
+                          {formatDate(transaction.createdAt)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-inkberry/50">Balance after</span>
+                        <span className="text-right font-semibold text-inkberry">
+                          {formatNaira(transaction.balanceAfterKobo)}
+                        </span>
+                      </div>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-inkberry/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
               <p className="text-xs text-inkberry/55">
                 Page {pagination.page} of {Math.max(pagination.totalPages, 1)}
               </p>
 
-              <div className="flex gap-2">
+              <div className="flex w-full gap-2 sm:w-auto">
                 <button
                   type="button"
                   onClick={() => changePage(pagination.page - 1)}
@@ -423,7 +468,7 @@ function WalletPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="fund-wallet-title"
-            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-xl sm:p-6"
           >
             <div className="flex items-start justify-between gap-4">
               <div>

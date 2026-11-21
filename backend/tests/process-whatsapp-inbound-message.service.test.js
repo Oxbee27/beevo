@@ -43,6 +43,13 @@ function createDatabase({
         };
       }
 
+      if (sql.includes("INSERT INTO pending_conversation_messages")) {
+        return {
+          rowCount: duplicate ? 0 : 1,
+          rows: duplicate ? [] : [{ id: 92 }],
+        };
+      }
+
       if (sql.includes("INSERT INTO conversation_messages")) {
         return {
           rowCount: duplicate ? 0 : 1,
@@ -77,7 +84,7 @@ describe("WhatsApp inbound message processing", () => {
     vi.clearAllMocks();
   });
 
-  it("creates an unclassified conversation without storing its message body", async () => {
+  it("stores unclassified messages securely in the pending inbox", async () => {
     const db = createDatabase({ classification: "unclassified" });
     connect.mockResolvedValue(db.client);
 
@@ -85,10 +92,19 @@ describe("WhatsApp inbound message processing", () => {
 
     expect(result).toMatchObject({
       processed: true,
-      stored: false,
-      reason: "unclassified",
+      stored: true,
+      pending: true,
+      reason: "pending_review",
       conversationId: 45,
     });
+
+    const pendingInsert = db.queries.find(({ sql }) =>
+      sql.includes("INSERT INTO pending_conversation_messages"),
+    );
+
+    expect(pendingInsert).toBeDefined();
+    expect(pendingInsert.values).toContain(message.body);
+    expect(pendingInsert.values).toContain(message.providerMessageId);
 
     expect(
       db.queries.some(({ sql }) =>
@@ -187,8 +203,9 @@ describe("WhatsApp inbound message processing", () => {
 
     expect(timestampUpdate).toBeDefined();
     expect(timestampUpdate.values).toEqual([
-      45,
+      7,
       new Date(message.receivedAt),
+      45,
     ]);
   });
 

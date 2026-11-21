@@ -1,15 +1,8 @@
 import pool from "../config/database.js";
 
 const MESSAGE_TYPES = new Set([
-  "text",
-  "template",
-  "image",
-  "document",
-  "audio",
-  "video",
-  "location",
-  "interactive",
-  "other",
+  "text", "template", "image", "document", "audio",
+  "video", "location", "interactive", "other",
 ]);
 
 function validDate(value) {
@@ -40,6 +33,7 @@ export async function processWhatsAppInboundMessage({
   const safeMessageType = MESSAGE_TYPES.has(messageType)
     ? messageType
     : "other";
+  const safeBody = typeof body === "string" ? body : null;
 
   const client = await db.connect();
 
@@ -65,6 +59,8 @@ export async function processWhatsAppInboundMessage({
 
     const channel = channelResult.rows[0];
 
+    // The upsert locks the matching conversation row. Its returned
+    // classification therefore reflects any concurrent owner decision.
     const conversationResult = await client.query(
       `INSERT INTO business_conversations (
          business_id,
@@ -97,18 +93,15 @@ export async function processWhatsAppInboundMessage({
 
     const conversation = conversationResult.rows[0];
 
-    // Never persist inbound message content for unclassified or excluded
-    // conversations. Staff must explicitly classify it as business first.
-    if (conversation.classification_status !== "business") {
+    if (conversation.classification_status === "excluded") {
       await client.query(
         `UPDATE business_conversations
          SET last_message_at = GREATEST(
-               COALESCE(last_message_at, $2),
-               $2
+               COALESCE(last_message_at, $2), $2
              ),
              updated_at = NOW()
-         WHERE id = $1`,
-        [conversation.id, receivedDate],
+         WHERE business_id = $1 AND id = $3`,
+        [channel.business_id, receivedDate, conversation.id],
       );
 
       await client.query("COMMIT");
@@ -116,49 +109,80 @@ export async function processWhatsAppInboundMessage({
       return {
         processed: true,
         stored: false,
-        reason: conversation.classification_status,
+        reason: "excluded",
         conversationId: conversation.id,
       };
     }
 
-    const messageResult = await client.query(
-      `INSERT INTO conversation_messages (
-         business_id,
-         conversation_id,
-         channel_connection_id,
-         direction,
-         provider_message_id,
-         message_type,
-         body,
-         delivery_status,
-         received_at
-       )
-       VALUES ($1, $2, $3, 'inbound', $4, $5, $6, 'received', $7)
-       ON CONFLICT (channel_connection_id, provider_message_id)
-       WHERE provider_message_id IS NOT NULL
-       DO NOTHING
-       RETURNING id`,
-      [
-        channel.business_id,
-        conversation.id,
-        channel.id,
-        String(providerMessageId),
-        safeMessageType,
-        typeof body === "string" ? body : null,
-        receivedDate,
-      ],
-    );
+    const pending = conversation.classification_status === "unclassified";
+    const targetTable = pending
+      ? "pending_conversation_messages"
+      : "conversation_messages";
 
-    if (messageResult.rowCount > 0) {
+    const insertResult = pending
+      ? await client.query(
+          `INSERT INTO pending_conversation_messages (
+             business_id,
+             conversation_id,
+             channel_connection_id,
+             provider_message_id,
+             message_type,
+             body,
+             received_at
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (channel_connection_id, provider_message_id)
+           DO NOTHING
+           RETURNING id`,
+          [
+            channel.business_id,
+            conversation.id,
+            channel.id,
+            String(providerMessageId),
+            safeMessageType,
+            safeBody,
+            receivedDate,
+          ],
+        )
+      : await client.query(
+          `INSERT INTO conversation_messages (
+             business_id,
+             conversation_id,
+             channel_connection_id,
+             direction,
+             provider_message_id,
+             message_type,
+             body,
+             delivery_status,
+             received_at
+           )
+           VALUES ($1, $2, $3, 'inbound', $4, $5, $6, 'received', $7)
+           ON CONFLICT (channel_connection_id, provider_message_id)
+           WHERE provider_message_id IS NOT NULL
+           DO NOTHING
+           RETURNING id`,
+          [
+            channel.business_id,
+            conversation.id,
+            channel.id,
+            String(providerMessageId),
+            safeMessageType,
+            safeBody,
+            receivedDate,
+          ],
+        );
+
+    const inserted = insertResult.rowCount > 0;
+
+    if (inserted) {
       await client.query(
         `UPDATE business_conversations
          SET last_message_at = GREATEST(
-               COALESCE(last_message_at, $2),
-               $2
+               COALESCE(last_message_at, $2), $2
              ),
              updated_at = NOW()
-         WHERE id = $1`,
-        [conversation.id, receivedDate],
+         WHERE business_id = $1 AND id = $3`,
+        [channel.business_id, receivedDate, conversation.id],
       );
     }
 
@@ -166,11 +190,15 @@ export async function processWhatsAppInboundMessage({
 
     return {
       processed: true,
-      stored: messageResult.rowCount > 0,
-      duplicate: messageResult.rowCount === 0,
-      reason: messageResult.rowCount > 0 ? "stored" : "duplicate",
+      stored: inserted,
+      pending,
+      duplicate: !inserted,
+      reason: inserted
+        ? pending ? "pending_review" : "stored"
+        : "duplicate",
       conversationId: conversation.id,
-      messageId: messageResult.rows[0]?.id ?? null,
+      messageId: insertResult.rows[0]?.id ?? null,
+      storage: targetTable,
     };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});

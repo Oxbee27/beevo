@@ -25,9 +25,8 @@ export async function getUpcomingFollowUps(businessId) {
       AND u.business_id = f.business_id
      WHERE f.business_id = $1
        AND f.status = 'pending'
-       AND f.due_at >= CURRENT_TIMESTAMP
-       AND f.due_at < CURRENT_TIMESTAMP + INTERVAL '7 days'
-     ORDER BY f.due_at ASC`,
+     ORDER BY f.due_at ASC
+     LIMIT 5`,
     [businessId]
   );
 

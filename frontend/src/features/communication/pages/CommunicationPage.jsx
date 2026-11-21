@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import ConfirmDialog from '../../../components/ui/ConfirmDialog.jsx'
+import ConversationWorkspace from '../components/ConversationWorkspace.jsx'
 import {
   cancelCommunicationMessage,
   getCommunicationChannels,
@@ -74,7 +75,7 @@ function ChannelIcon({ channel }) {
 
 function MetricCard({ label, value, description }) {
   return (
-    <div className="rounded-2xl border border-inkberry/10 bg-white p-5">
+    <div className="rounded-2xl border border-inkberry/10 bg-white p-4 sm:p-5">
       <p className="text-sm font-medium text-inkberry/55">{label}</p>
       <p className="mt-2 text-3xl font-bold tabular-nums text-inkberry">
         {value ?? 0}
@@ -120,7 +121,7 @@ function MessageDetails({ message, onClose, onCancel, onRetry, busy }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-inkberry/40 p-4">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-warm-ivory p-6 shadow-xl">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-warm-ivory p-4 sm:p-6 shadow-xl">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-bold uppercase tracking-wider text-inkberry/45">
@@ -232,7 +233,7 @@ function MessageDetails({ message, onClose, onCancel, onRetry, busy }) {
         </div>
 
         {(canCancel || canRetry) && (
-          <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-inkberry/10 pt-5">
+          <div className="mt-6 flex flex-col-reverse gap-3 border-t border-inkberry/10 pt-5 sm:flex-row sm:justify-end">
             {canCancel && (
               <button
                 type="button"
@@ -376,12 +377,12 @@ export default function CommunicationPage() {
   const deliveryRate = overview?.deliveryRate
 
   return (
-    <div className="space-y-7">
-      <div>
+    <div className="min-w-0 space-y-6 sm:space-y-7">
+      <div className="min-w-0">
         <p className="text-xs font-bold uppercase tracking-wider text-inkberry/45">
           Beevo workspace
         </p>
-        <div className="mt-1 flex flex-wrap items-end justify-between gap-3">
+        <div className="mt-1 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-inkberry sm:text-3xl">
               Communication
@@ -396,7 +397,7 @@ export default function CommunicationPage() {
               void loadSummary()
               void loadMessages()
             }}
-            className="rounded-xl border border-inkberry/15 bg-white px-4 py-2.5 text-sm font-semibold text-inkberry hover:bg-inkberry/5"
+            className="w-full rounded-xl border border-inkberry/15 bg-white px-4 py-2.5 text-sm font-semibold text-inkberry hover:bg-inkberry/5 sm:w-auto"
           >
             Refresh
           </button>
@@ -416,7 +417,7 @@ export default function CommunicationPage() {
             <span className="text-xs text-inkberry/45">Updating…</span>
           )}
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
           <MetricCard label="Total messages" value={totals.total} description="All recorded communication messages" />
           <MetricCard label="Delivered" value={totals.delivered} description="Successfully delivered messages" />
           <MetricCard label="Failed" value={totals.failed} description="Messages requiring attention" />
@@ -459,8 +460,10 @@ export default function CommunicationPage() {
         )}
       </section>
 
+      <ConversationWorkspace />
+
       <section className="overflow-hidden rounded-2xl border border-inkberry/10 bg-white">
-        <div className="border-b border-inkberry/10 p-5">
+        <div className="min-w-0 border-b border-inkberry/10 p-4 sm:p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="font-semibold text-inkberry">Message history</h2>
@@ -544,7 +547,7 @@ export default function CommunicationPage() {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[760px] text-left">
                 <thead className="bg-warm-ivory text-xs uppercase tracking-wide text-inkberry/55">
                   <tr>
@@ -600,11 +603,54 @@ export default function CommunicationPage() {
               </table>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-inkberry/10 px-5 py-4">
+            <div className="space-y-3 p-4 md:hidden">
+              {messages.map((message) => (
+                <article key={message.id} className="min-w-0 rounded-xl border border-inkberry/10 bg-white p-4">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <ChannelIcon channel={message.channel} />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-inkberry">
+                        {formatLabel(message.channel)}
+                      </p>
+                      <p className="text-xs text-inkberry/45">
+                        Message #{message.id}
+                        {message.follow_up_id ? ` · Follow-up #${message.follow_up_id}` : ''}
+                      </p>
+                    </div>
+                    <StatusBadge status={message.status} />
+                  </div>
+
+                  <div className="mt-4 space-y-2 text-sm">
+                    <div>
+                      <p className="text-xs text-inkberry/45">Recipient</p>
+                      <p className="break-all text-inkberry/75">{message.recipient || '—'}</p>
+                    </div>
+                    <div className="flex flex-wrap justify-between gap-3">
+                      <p className="text-xs text-inkberry/55">
+                        Attempts: {message.attempt_count ?? 0} / {message.max_attempts ?? 0}
+                      </p>
+                      <p className="text-xs text-inkberry/55">
+                        {formatDate(message.created_at)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => openMessage(message.id)}
+                    className="mt-4 w-full rounded-lg bg-peach-sand/50 px-3 py-2.5 text-sm font-semibold text-inkberry"
+                  >
+                    View details
+                  </button>
+                </article>
+              ))}
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-inkberry/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
               <p className="text-xs text-inkberry/55">
                 Page {pagination.page} of {Math.max(pagination.totalPages, 1)}
               </p>
-              <div className="flex gap-2">
+              <div className="flex w-full gap-2 sm:w-auto">
                 <button
                   type="button"
                   disabled={page <= 1}
