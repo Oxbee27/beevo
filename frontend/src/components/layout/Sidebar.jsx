@@ -10,6 +10,7 @@ const primaryItems = [
 
 const moreItems = [
   { label: 'Communication', path: '/communication', icon: '✉' },
+  { label: 'Communication settings', path: '/communication/settings', icon: '⚙' },
   { label: 'Products', path: '/products', icon: '▧' },
   { label: 'Wallet', path: '/wallet', icon: '◈' },
   { label: 'Team & roles', path: '/team', icon: '♧' },

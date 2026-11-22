@@ -1,4 +1,9 @@
 import { Router } from "express";
+import { requireOwner } from "../middleware/require-owner.middleware.js";
+import {
+  getBusinessCommunicationSettingsController,
+  updateBusinessCommunicationSettingsController,
+} from "../controllers/business-communication-settings.controller.js";
 import { authenticateToken } from "../middleware/auth.middleware.js";
 import { requirePermission } from "../middleware/require-permission.middleware.js";
 
@@ -17,6 +22,19 @@ import {
 const router = Router();
 
 router.use(authenticateToken);
+
+router.get(
+  "/business-settings",
+  requireOwner,
+  getBusinessCommunicationSettingsController,
+);
+
+router.patch(
+  "/business-settings",
+  requireOwner,
+  updateBusinessCommunicationSettingsController,
+);
+
 
 router.get(
   "/channels",

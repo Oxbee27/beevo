@@ -94,3 +94,14 @@ export async function getConversation(id) {
   const result = await apiRequest(`/conversations/${id}`)
   return result.data
 }
+
+export function getBusinessCommunicationSettings() {
+  return apiRequest('/communications/business-settings')
+}
+
+export function updateBusinessCommunicationSettings(settings) {
+  return apiRequest('/communications/business-settings', {
+    method: 'PATCH',
+    body: JSON.stringify(settings),
+  })
+}

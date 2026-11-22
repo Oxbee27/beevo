@@ -10,6 +10,7 @@ import FollowUpProfilePage from '../features/follow-ups/pages/FollowUpProfilePag
 import TeamPage from '../features/team/pages/TeamPage.jsx'
 import ProductsPage from '../features/products/pages/ProductsPage.jsx'
 import CommunicationPage from '../features/communication/pages/CommunicationPage.jsx'
+import BusinessCommunicationSettingsPage from '../features/communication/pages/BusinessCommunicationSettingsPage.jsx'
 import WalletPage from '../features/wallet/pages/WalletPage.jsx'
 import LoginPage from '../features/authentication/pages/LoginPage.jsx'
 import RegisterPage from '../features/authentication/pages/RegisterPage.jsx'
@@ -41,6 +42,7 @@ export const router = createBrowserRouter([
           { path: 'team', element: <TeamPage /> },
           { path: 'products', element: <ProductsPage /> },
           { path: 'communication', element: <CommunicationPage /> },
+      { path: 'communication/settings', element: <BusinessCommunicationSettingsPage /> },
           { path: 'wallet', element: <WalletPage /> },
         ],
       },
