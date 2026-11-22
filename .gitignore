@@ -21,3 +21,5 @@ coverage/
 # Editor and operating system files
 .vscode/
 .DS_Store
+*.bak
+.release-fix-backup-*/
