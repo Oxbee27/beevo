@@ -399,6 +399,13 @@ function createHarness({
         return { rows: (values[1] || []).map((id) => ({ id })), rowCount: (values[1] || []).length };
       }
 
+      if (normalized.includes("FROM business_communication_profiles")) {
+        return {
+          rows: state.businessSmsProfile ? [state.businessSmsProfile] : [],
+          rowCount: state.businessSmsProfile ? 1 : 0,
+        };
+      }
+
       if (
         normalized.includes("SELECT 1 FROM restock_campaign_recipients r")
       ) {
@@ -433,6 +440,10 @@ function createHarness({
 describe("Beevo scheduled-message worker", () => {
   it("sends an eligible SMS through Termii and records its provider message ID", async () => {
     const { db, state } = createHarness({ channel: "sms" });
+    state.businessSmsProfile = {
+      sms_sender_id: "StoreABC",
+      sms_status: "approved",
+    };
 
     const sendSms = vi.fn().mockResolvedValue({
       provider: "termii",
@@ -451,6 +462,7 @@ describe("Beevo scheduled-message worker", () => {
     expect(sendSms).toHaveBeenCalledWith({
       to: "+2348012345678",
       body: "Thank you for your enquiry.",
+      senderId: "StoreABC",
     });
     expect(sendEmail).not.toHaveBeenCalled();
 
@@ -605,6 +617,54 @@ describe("Beevo scheduled-message worker", () => {
       expect(state.queries).toContain("ROLLBACK");
     },
   );
+
+  it.each([
+    ["missing profile", null],
+    ["pending Sender ID", {
+      sms_sender_id: "StoreABC",
+      sms_status: "pending",
+    }],
+    ["rejected Sender ID", {
+      sms_sender_id: "StoreABC",
+      sms_status: "rejected",
+    }],
+    ["approved profile with blank Sender ID", {
+      sms_sender_id: "   ",
+      sms_status: "approved",
+    }],
+  ])("blocks SMS delivery for a %s", async (_scenario, profile) => {
+    const { db, state } = createHarness({ channel: "sms" });
+    state.businessSmsProfile = profile;
+
+    const sendSms = vi.fn();
+
+    const result = await processDueFollowUpMessages({
+      db,
+      workerId: "sms-unapproved-sender-test-worker",
+      sendSms,
+    });
+
+    // No provider request must occur without a valid, approved identity.
+    expect(sendSms).not.toHaveBeenCalled();
+
+    // The message is safely returned to the queue and the failed attempt
+    // is recorded; no provider message ID can be created.
+    expect(result).toEqual({
+      processed: 1,
+      results: [{ id: "101", status: "retry_recorded" }],
+    });
+    expect(state.message.status).toBe("pending");
+    expect(state.message.provider_message_id ?? null).toBeNull();
+    expect(state.attemptStatus).toBe("failed");
+    expect(state.billingReservation.status).toBe("released");
+
+    expect(
+      state.queries.some((query) =>
+        query.includes("FROM business_communication_profiles") &&
+        query.includes("WHERE business_id = $1"),
+      ),
+    ).toBe(true);
+  });
 
   it("releases a claimed message when the eligibility database check fails", async () => {
     const { db, state } = createHarness({

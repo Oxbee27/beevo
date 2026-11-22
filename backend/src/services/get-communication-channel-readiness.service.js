@@ -2,7 +2,6 @@ const CHANNEL_REQUIREMENTS = {
   email: ["RESEND_API_KEY", "RESEND_FROM_EMAIL"],
   sms: [
     "TERMII_API_KEY",
-    "TERMII_SENDER_ID",
     "TERMII_BASE_URL",
     "TERMII_SMS_CHANNEL",
   ],

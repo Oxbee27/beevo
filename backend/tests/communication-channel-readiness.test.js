@@ -6,7 +6,6 @@ const environmentVariables = [
   "RESEND_FROM_EMAIL",
   "RESEND_WEBHOOK_SECRET",
   "TERMII_API_KEY",
-  "TERMII_SENDER_ID",
   "TERMII_BASE_URL",
   "TERMII_SMS_CHANNEL",
   "TERMII_WEBHOOK_SECRET",
@@ -58,9 +57,8 @@ describe("Communication channel readiness", () => {
     });
   });
 
-  it("reports SMS as ready when all Termii configuration is present", () => {
+  it("reports SMS provider as ready when Termii credentials are present", () => {
     process.env.TERMII_API_KEY = "test-termii-key";
-    process.env.TERMII_SENDER_ID = "BEEVO";
     process.env.TERMII_BASE_URL = "https://api.ng.termii.com";
     process.env.TERMII_SMS_CHANNEL = "generic";
 
@@ -91,7 +89,6 @@ describe("Communication channel readiness", () => {
     process.env.RESEND_API_KEY = "   ";
     process.env.RESEND_FROM_EMAIL = "hello@example.com";
     process.env.TERMII_API_KEY = "test-termii-key";
-    process.env.TERMII_SENDER_ID = "   ";
     process.env.TERMII_BASE_URL = "https://api.ng.termii.com";
     process.env.TERMII_SMS_CHANNEL = "generic";
     process.env.WHATSAPP_ACCESS_TOKEN = "test-meta-token";
@@ -110,7 +107,11 @@ describe("Communication channel readiness", () => {
       status: "not_configured",
       missing: ["RESEND_API_KEY"],
     });
-    expect(result.channels.sms.missing).toContain("TERMII_SENDER_ID");
+    expect(result.channels.sms).toEqual({
+      configured: true,
+      status: "configured",
+      missing: [],
+    });
     expect(result.channels.whatsapp.status).toBe("configured");
     expect(result.webhooks).toEqual({
       resend: false,

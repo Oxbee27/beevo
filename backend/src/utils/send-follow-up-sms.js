@@ -7,17 +7,24 @@ function providerError(message, deliveryOutcome) {
 export async function sendFollowUpSms({
   to,
   body,
+  senderId,
   fetchImpl = fetch,
   env = process.env,
 } = {}) {
   const apiKey = env.TERMII_API_KEY;
-  const senderId = env.TERMII_SENDER_ID;
   const baseUrl = env.TERMII_BASE_URL;
   const channel = env.TERMII_SMS_CHANNEL;
 
-  if (!apiKey || !senderId || !baseUrl || !channel) {
+  if (!apiKey || !baseUrl || !channel) {
     throw providerError(
-      "Termii SMS configuration is incomplete.",
+      "Termii SMS provider configuration is incomplete.",
+      "rejected",
+    );
+  }
+
+  if (typeof senderId !== "string" || !/^[A-Za-z0-9]{3,11}$/.test(senderId)) {
+    throw providerError(
+      "This business does not have a valid approved SMS Sender ID.",
       "rejected",
     );
   }
@@ -25,13 +32,6 @@ export async function sendFollowUpSms({
   if (!["generic", "dnd"].includes(channel)) {
     throw providerError(
       "Termii SMS channel must be generic or dnd.",
-      "rejected",
-    );
-  }
-
-  if (!/^[A-Za-z0-9]{3,11}$/.test(senderId)) {
-    throw providerError(
-      "The configured Termii sender ID is invalid.",
       "rejected",
     );
   }

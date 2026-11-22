@@ -1194,9 +1194,34 @@ export async function processDueFollowUpMessages({
 
         try {
           if (message.channel === "sms") {
+            const senderProfileResult = await db.query(
+              `
+                SELECT sms_sender_id, sms_status
+                FROM business_communication_profiles
+                WHERE business_id = $1
+                LIMIT 1
+              `,
+              [message.business_id],
+            );
+
+            const senderProfile = senderProfileResult.rows[0];
+
+            if (
+              senderProfile?.sms_status !== "approved" ||
+              typeof senderProfile?.sms_sender_id !== "string" ||
+              !senderProfile.sms_sender_id.trim()
+            ) {
+              const error = new Error(
+                "This business must configure an approved SMS Sender ID before sending messages.",
+              );
+              error.deliveryOutcome = "rejected";
+              throw error;
+            }
+
             delivery = await sendSms({
               to: message.recipient,
               body: message.body,
+              senderId: senderProfile.sms_sender_id.trim(),
             });
           } else if (message.channel === "whatsapp") {
             if (!message.template_key) {

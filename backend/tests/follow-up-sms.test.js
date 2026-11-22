@@ -3,7 +3,6 @@ import { sendFollowUpSms } from "../src/utils/send-follow-up-sms.js";
 
 const env = {
   TERMII_API_KEY: "test-api-key",
-  TERMII_SENDER_ID: "BeevoCRM",
   TERMII_BASE_URL: "https://api.ng.termii.com",
   TERMII_SMS_CHANNEL: "generic",
 };
@@ -11,6 +10,7 @@ const env = {
 const input = {
   to: "+2348012345678",
   body: "Your business has a new update.",
+  senderId: "StoreABC",
   env,
 };
 
@@ -35,7 +35,7 @@ describe("sendFollowUpSms", () => {
     expect(url).toBe("https://api.ng.termii.com/api/sms/send");
     expect(payload.to).toBe("2348012345678");
     expect(payload.api_key).toBe("test-api-key");
-    expect(payload.from).toBe("BeevoCRM");
+    expect(payload.from).toBe("StoreABC");
     expect(payload.channel).toBe("generic");
 
     expect(result).toEqual({
@@ -56,6 +56,16 @@ describe("sendFollowUpSms", () => {
     ).rejects.toMatchObject({
       deliveryOutcome: "rejected",
     });
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing business Sender ID without calling Termii", async () => {
+    const fetchImpl = vi.fn();
+
+    await expect(
+      sendFollowUpSms({ ...input, senderId: undefined, fetchImpl }),
+    ).rejects.toMatchObject({ deliveryOutcome: "rejected" });
 
     expect(fetchImpl).not.toHaveBeenCalled();
   });
