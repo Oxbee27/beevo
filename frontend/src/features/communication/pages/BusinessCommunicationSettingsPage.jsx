@@ -87,6 +87,18 @@ export default function BusinessCommunicationSettingsPage() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
+  // Automatically dismiss save feedback after four seconds.
+  useEffect(() => {
+    if (!notice && !error) return
+
+    const timeout = window.setTimeout(() => {
+      setNotice('')
+      setError('')
+    }, 4000)
+
+    return () => window.clearTimeout(timeout)
+  }, [notice, error])
+
   useEffect(() => {
     let active = true
 
@@ -169,15 +181,32 @@ export default function BusinessCommunicationSettingsPage() {
         </p>
       </header>
 
-      {error && (
-        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      {notice && (
-        <div role="status" className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-          {notice}
+      {(error || notice) && (
+        <div
+          key={error || notice}
+          role={error ? "alert" : "status"}
+          aria-live={error ? "assertive" : "polite"}
+          className={`fixed bottom-5 right-5 z-[100] flex max-w-[calc(100vw-2.5rem)] items-start gap-3 rounded-xl border px-5 py-4 text-sm font-medium shadow-xl sm:max-w-md ${
+            error
+              ? "border-red-200 bg-red-50 text-red-700"
+              : "border-green-200 bg-green-50 text-green-800"
+          }`}
+        >
+          <span className="mt-0.5 text-base" aria-hidden="true">
+            {error ? "!" : "✓"}
+          </span>
+          <span className="flex-1 leading-5">{error || notice}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setError('')
+              setNotice('')
+            }}
+            className="ml-2 rounded-md px-1 text-lg leading-none opacity-60 transition hover:opacity-100"
+            aria-label="Dismiss notification"
+          >
+            ×
+          </button>
         </div>
       )}
 
