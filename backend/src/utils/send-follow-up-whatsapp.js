@@ -4,37 +4,24 @@ function whatsappError(message, deliveryOutcome) {
   return error;
 }
 
-function getConfig() {
-  const {
-    WHATSAPP_ACCESS_TOKEN,
-    WHATSAPP_PHONE_NUMBER_ID,
-    WHATSAPP_API_VERSION,
-  } = process.env;
+function getConfig({ accessToken, phoneNumberId }) {
+  const apiVersion = process.env.WHATSAPP_API_VERSION;
 
   if (
-    !WHATSAPP_ACCESS_TOKEN ||
-    !WHATSAPP_PHONE_NUMBER_ID ||
-    !WHATSAPP_API_VERSION
+    typeof accessToken !== "string" ||
+    !accessToken.trim() ||
+    typeof phoneNumberId !== "string" ||
+    !/^\d+$/.test(phoneNumberId) ||
+    typeof apiVersion !== "string" ||
+    !/^v\d+\.\d+$/.test(apiVersion)
   ) {
     throw whatsappError(
-      "WhatsApp Cloud API is not fully configured.",
+      "The business WhatsApp connection is not fully configured.",
       "rejected",
     );
   }
 
-  if (!/^v\d+\.\d+$/.test(WHATSAPP_API_VERSION)) {
-    throw whatsappError("WhatsApp API version is invalid.", "rejected");
-  }
-
-  if (!/^\d+$/.test(WHATSAPP_PHONE_NUMBER_ID)) {
-    throw whatsappError("WhatsApp phone number ID is invalid.", "rejected");
-  }
-
-  return {
-    accessToken: WHATSAPP_ACCESS_TOKEN,
-    phoneNumberId: WHATSAPP_PHONE_NUMBER_ID,
-    apiVersion: WHATSAPP_API_VERSION,
-  };
+  return { accessToken, phoneNumberId, apiVersion };
 }
 
 export async function sendFollowUpWhatsApp({
@@ -42,8 +29,10 @@ export async function sendFollowUpWhatsApp({
   templateName,
   languageCode = "en",
   components = [],
+  accessToken,
+  phoneNumberId,
 }) {
-  const config = getConfig();
+  const config = getConfig({ accessToken, phoneNumberId });
 
   if (typeof to !== "string" || !/^\+[1-9]\d{7,14}$/.test(to)) {
     throw whatsappError("WhatsApp recipient must use E.164 format.", "rejected");

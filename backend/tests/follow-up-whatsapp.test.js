@@ -4,8 +4,6 @@ import { sendFollowUpWhatsApp } from "../src/utils/send-follow-up-whatsapp.js";
 const originalEnv = { ...process.env };
 
 const validConfig = {
-  WHATSAPP_ACCESS_TOKEN: "test-access-token",
-  WHATSAPP_PHONE_NUMBER_ID: "123456789012345",
   WHATSAPP_API_VERSION: "v26.0",
 };
 
@@ -42,6 +40,8 @@ describe("Beevo WhatsApp adapter", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await sendFollowUpWhatsApp({
+      accessToken: "test-access-token",
+      phoneNumberId: "123456789012345",
       to: "+2348012345678",
       templateName: "follow_up_reminder",
       languageCode: "en",
@@ -99,6 +99,8 @@ describe("Beevo WhatsApp adapter", () => {
 
     await expect(
       sendFollowUpWhatsApp({
+      accessToken: "test-access-token",
+      phoneNumberId: "123456789012345",
         to: "08012345678",
         templateName: "follow_up_reminder",
       }),
@@ -110,6 +112,8 @@ describe("Beevo WhatsApp adapter", () => {
 
     await expect(
       sendFollowUpWhatsApp({
+      accessToken: "test-access-token",
+      phoneNumberId: "123456789012345",
         to: "+2348012345678",
         templateName: "Invalid Template Name",
       }),
@@ -132,6 +136,8 @@ describe("Beevo WhatsApp adapter", () => {
 
     await expect(
       sendFollowUpWhatsApp({
+      accessToken: "test-access-token",
+      phoneNumberId: "123456789012345",
         to: "+2348012345678",
         templateName: "follow_up_reminder",
       }),
@@ -152,6 +158,8 @@ describe("Beevo WhatsApp adapter", () => {
 
     await expect(
       sendFollowUpWhatsApp({
+      accessToken: "test-access-token",
+      phoneNumberId: "123456789012345",
         to: "+2348012345678",
         templateName: "follow_up_reminder",
       }),
@@ -168,6 +176,8 @@ describe("Beevo WhatsApp adapter", () => {
 
     await expect(
       sendFollowUpWhatsApp({
+      accessToken: "test-access-token",
+      phoneNumberId: "123456789012345",
         to: "+2348012345678",
         templateName: "follow_up_reminder",
       }),
@@ -188,6 +198,8 @@ describe("Beevo WhatsApp adapter", () => {
 
     await expect(
       sendFollowUpWhatsApp({
+      accessToken: "test-access-token",
+      phoneNumberId: "123456789012345",
         to: "+2348012345678",
         templateName: "follow_up_reminder",
       }),

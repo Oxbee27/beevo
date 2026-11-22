@@ -54,21 +54,21 @@ describe("Communications controllers", () => {
     vi.clearAllMocks();
   });
 
-  it("returns channel readiness without exposing credentials", () => {
+  it("returns channel readiness without exposing credentials", async () => {
     const readiness = {
       channels: {
         email: { configured: true, status: "configured", missing: [] },
         sms: { configured: false, status: "not_configured", missing: ["TERMII_API_KEY"] },
-        whatsapp: { configured: false, status: "not_configured", missing: ["WHATSAPP_ACCESS_TOKEN"] },
+        whatsapp: { configured: false, status: "not_configured", missing: ["CONNECTED_WHATSAPP_BUSINESS_ACCOUNT"] },
       },
       webhooks: { resend: true, termii: false, whatsapp: false },
     };
 
-    getCommunicationChannelReadiness.mockReturnValue(readiness);
+    getCommunicationChannelReadiness.mockResolvedValue(readiness);
 
     const res = createResponse();
 
-    getCommunicationChannelsController(createRequest(), res);
+    await getCommunicationChannelsController(createRequest(), res);
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({

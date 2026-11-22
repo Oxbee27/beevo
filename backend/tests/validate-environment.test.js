@@ -52,6 +52,43 @@ describe("Production environment validation", () => {
     ).not.toThrow();
   });
 
+  it("does not require the WhatsApp encryption key before a business connects", () => {
+    expect(() =>
+      validateProductionEnvironment(VALID_PRODUCTION_ENV),
+    ).not.toThrow();
+  });
+
+  it("accepts a valid 32-byte hexadecimal WhatsApp encryption key", () => {
+    expect(() =>
+      validateProductionEnvironment({
+        ...VALID_PRODUCTION_ENV,
+        WHATSAPP_TOKEN_ENCRYPTION_KEY: "0123456789abcdef".repeat(4),
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects a WhatsApp encryption key with an invalid length", () => {
+    expect(() =>
+      validateProductionEnvironment({
+        ...VALID_PRODUCTION_ENV,
+        WHATSAPP_TOKEN_ENCRYPTION_KEY: "short-key",
+      }),
+    ).toThrow(
+      "WHATSAPP_TOKEN_ENCRYPTION_KEY must contain exactly 64 hexadecimal characters",
+    );
+  });
+
+  it("rejects a WhatsApp encryption key containing non-hexadecimal characters", () => {
+    expect(() =>
+      validateProductionEnvironment({
+        ...VALID_PRODUCTION_ENV,
+        WHATSAPP_TOKEN_ENCRYPTION_KEY: "z".repeat(64),
+      }),
+    ).toThrow(
+      "WHATSAPP_TOKEN_ENCRYPTION_KEY must contain exactly 64 hexadecimal characters",
+    );
+  });
+
   it("does not expose configured secret values in validation errors", () => {
     const secret = "short-secret-value";
 

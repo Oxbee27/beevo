@@ -37,12 +37,25 @@ function validDate(value) {
     );
 }
 
-export function getCommunicationChannelsController(_req, res) {
-  return res.status(200).json({
-    success: true,
-    message: "Communication channel readiness retrieved successfully.",
-    data: getCommunicationChannelReadiness(),
-  });
+export async function getCommunicationChannelsController(req, res) {
+  try {
+    const readiness = await getCommunicationChannelReadiness({
+      businessId: req.user?.businessId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Communication channel readiness retrieved successfully.",
+      data: readiness,
+    });
+  } catch (error) {
+    console.error("Communication channel readiness failed:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Communication channel readiness could not be retrieved. Please try again.",
+    });
+  }
 }
 
 export async function listCommunicationsMessagesController(req, res) {

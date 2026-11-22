@@ -30,6 +30,17 @@ export function validateProductionEnvironment(env = process.env) {
     issues.push("JWT_SECRET must contain at least 32 characters");
   }
 
+  const whatsappEncryptionKey = env.WHATSAPP_TOKEN_ENCRYPTION_KEY?.trim();
+
+  if (
+    whatsappEncryptionKey &&
+    !/^[0-9a-fA-F]{64}$/.test(whatsappEncryptionKey)
+  ) {
+    issues.push(
+      "WHATSAPP_TOKEN_ENCRYPTION_KEY must contain exactly 64 hexadecimal characters",
+    );
+  }
+
   const expiry = env.JWT_EXPIRES_IN || "1h";
   const durationMatch = expiry.match(/^([1-9][0-9]*)(s|m|h|d)$/);
 

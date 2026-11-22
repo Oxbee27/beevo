@@ -8,6 +8,7 @@ import {
 import { sendFollowUpEmail } from "../utils/send-follow-up-email.js";
 import { sendFollowUpSms } from "../utils/send-follow-up-sms.js";
 import { sendFollowUpWhatsApp } from "../utils/send-follow-up-whatsapp.js";
+import { resolveBusinessWhatsAppCredentials } from "../services/resolve-business-whatsapp-credentials.service.js";
 import { applyWhatsAppDeliveryStatus } from "../services/process-whatsapp-webhook.service.js";
 import {
   applyTermiiDeliveryStatus,
@@ -1054,6 +1055,7 @@ export async function processDueFollowUpMessages({
   sendEmail = sendFollowUpEmail,
   sendSms = sendFollowUpSms,
   sendWhatsApp = sendFollowUpWhatsApp,
+  resolveWhatsAppCredentials = resolveBusinessWhatsAppCredentials,
   messageId = null,
   db = pool,
   heartbeatIntervalMs = 60_000,
@@ -1232,9 +1234,23 @@ export async function processDueFollowUpMessages({
               throw error;
             }
 
+            const connection = await resolveWhatsAppCredentials({
+              businessId: message.business_id,
+            });
+
+            if (connection?.status !== "ready" || !connection.credentials) {
+              const error = new Error(
+                "This business does not have exactly one active WhatsApp connection with valid credentials.",
+              );
+              error.deliveryOutcome = "rejected";
+              throw error;
+            }
+
             delivery = await sendWhatsApp({
               to: message.recipient,
               templateName: message.template_key,
+              accessToken: connection.credentials.accessToken,
+              phoneNumberId: connection.credentials.phoneNumberId,
             });
           } else if (message.channel === "email") {
             delivery = await sendEmail({

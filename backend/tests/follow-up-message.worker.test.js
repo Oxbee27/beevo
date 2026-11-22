@@ -880,11 +880,20 @@ describe("Beevo scheduled-message worker", () => {
       db,
       workerId: "whatsapp-worker-1",
       sendWhatsApp,
+      resolveWhatsAppCredentials: vi.fn(async () => ({
+        status: "ready",
+        credentials: {
+          accessToken: "tenant-token",
+          phoneNumberId: "123456789",
+        },
+      })),
     });
 
     expect(sendWhatsApp).toHaveBeenCalledWith({
       to: "+2348012345678",
       templateName: "hello_world",
+      accessToken: "tenant-token",
+      phoneNumberId: "123456789",
     });
     expect(result.results).toEqual([
       { id: "101", status: "sent" },
@@ -919,6 +928,13 @@ describe("Beevo scheduled-message worker", () => {
       db,
       workerId: "whatsapp-worker-2",
       sendWhatsApp,
+      resolveWhatsAppCredentials: vi.fn(async () => ({
+        status: "ready",
+        credentials: {
+          accessToken: "tenant-token",
+          phoneNumberId: "123456789",
+        },
+      })),
     });
 
     expect(result.results).toEqual([
@@ -955,6 +971,13 @@ describe("Beevo scheduled-message worker", () => {
       db,
       workerId: "whatsapp-worker-3",
       sendWhatsApp,
+      resolveWhatsAppCredentials: vi.fn(async () => ({
+        status: "ready",
+        credentials: {
+          accessToken: "tenant-token",
+          phoneNumberId: "123456789",
+        },
+      })),
     });
 
     expect(sendWhatsApp).toHaveBeenCalledTimes(1);
