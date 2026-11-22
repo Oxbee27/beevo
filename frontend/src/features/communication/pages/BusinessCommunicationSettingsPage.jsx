@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import {
   getBusinessCommunicationSettings,
   updateBusinessCommunicationSettings,
+  getWhatsAppConnectionStatus,
+  disconnectWhatsAppConnection,
 } from '../services/communication.service.js'
 
 const emptySettings = {
@@ -86,6 +88,9 @@ export default function BusinessCommunicationSettingsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [whatsappConnection, setWhatsappConnection] = useState(null)
+  const [connectionLoading, setConnectionLoading] = useState(true)
+  const [disconnecting, setDisconnecting] = useState(false)
 
   // Automatically dismiss save feedback after four seconds.
   useEffect(() => {
@@ -122,6 +127,57 @@ export default function BusinessCommunicationSettingsPage() {
       active = false
     }
   }, [])
+
+  useEffect(() => {
+    let active = true
+
+    async function loadWhatsAppConnection() {
+      try {
+        const result = await getWhatsAppConnectionStatus()
+        if (active) setWhatsappConnection(result)
+      } catch {
+        if (active) {
+          setWhatsappConnection({ status: 'unavailable', connected: false })
+        }
+      } finally {
+        if (active) setConnectionLoading(false)
+      }
+    }
+
+    void loadWhatsAppConnection()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  async function handleWhatsAppDisconnect() {
+    const confirmed = window.confirm(
+      'Disconnect this business WhatsApp account? Beevo will stop using it to send and receive WhatsApp messages.'
+    )
+
+    if (!confirmed) return
+
+    setDisconnecting(true)
+    setError('')
+    setNotice('')
+
+    try {
+      await disconnectWhatsAppConnection()
+      setWhatsappConnection({
+        status: 'not_connected',
+        connected: false,
+        connection: null,
+      })
+      setNotice('The business WhatsApp account has been disconnected.')
+    } catch (disconnectError) {
+      setError(
+        disconnectError.message || 'Unable to disconnect WhatsApp. Please try again.'
+      )
+    } finally {
+      setDisconnecting(false)
+    }
+  }
 
   function handleChange(event) {
     const { name, value } = event.target
@@ -239,6 +295,82 @@ export default function BusinessCommunicationSettingsPage() {
             help="Use 3–11 letters or numbers. Saving an ID here does not mean the mobile networks have approved it."
           />
         </ChannelSection>
+
+        <section className="space-y-4 rounded-2xl border border-inkberry/10 bg-white p-4 sm:p-6">
+          <div>
+            <h2 className="font-semibold text-inkberry">WhatsApp account connection</h2>
+            <p className="mt-1 text-sm leading-5 text-inkberry/55">
+              This status reflects the actual Meta WhatsApp connection, not the account IDs saved below.
+            </p>
+          </div>
+
+          {connectionLoading ? (
+            <p className="text-sm text-inkberry/55">Checking WhatsApp connection…</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-3">
+                <Status
+                  value={
+                    whatsappConnection?.status === 'connected'
+                      ? 'verified'
+                      : whatsappConnection?.status === 'pending'
+                        ? 'pending'
+                        : whatsappConnection?.status === 'needs_attention' ||
+                            whatsappConnection?.status === 'ambiguous' ||
+                            whatsappConnection?.status === 'unavailable'
+                          ? 'rejected'
+                          : 'not_configured'
+                  }
+                />
+                <span className="text-sm font-medium text-inkberry">
+                  {whatsappConnection?.status === 'connected'
+                    ? 'WhatsApp is connected'
+                    : whatsappConnection?.status === 'pending'
+                      ? 'Connection is pending'
+                      : whatsappConnection?.status === 'needs_attention'
+                        ? 'Connection needs attention'
+                        : whatsappConnection?.status === 'ambiguous'
+                          ? 'Multiple active connections detected'
+                          : whatsappConnection?.status === 'unavailable'
+                            ? 'Connection status is currently unavailable'
+                            : 'No WhatsApp account connected'}
+                </span>
+              </div>
+
+              {whatsappConnection?.connection && (
+                <div className="rounded-xl bg-warm-ivory p-3 text-sm text-inkberry">
+                  {whatsappConnection.connection.displayName && (
+                    <p className="font-semibold">
+                      {whatsappConnection.connection.displayName}
+                    </p>
+                  )}
+                  {whatsappConnection.connection.displayNumber && (
+                    <p className="mt-1 text-inkberry/65">
+                      {whatsappConnection.connection.displayNumber}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {whatsappConnection?.message && (
+                <p className="text-sm text-amber-700">
+                  {whatsappConnection.message}
+                </p>
+              )}
+
+              {whatsappConnection?.connected && (
+                <button
+                  type="button"
+                  onClick={handleWhatsAppDisconnect}
+                  disabled={disconnecting}
+                  className="min-h-11 rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {disconnecting ? 'Disconnecting…' : 'Disconnect WhatsApp'}
+                </button>
+              )}
+            </>
+          )}
+        </section>
 
         <ChannelSection
           title="WhatsApp Business"

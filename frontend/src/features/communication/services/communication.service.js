@@ -105,3 +105,16 @@ export function updateBusinessCommunicationSettings(settings) {
     body: JSON.stringify(settings),
   })
 }
+
+
+export async function getWhatsAppConnectionStatus() {
+  const result = await apiRequest('/communications/whatsapp-connection')
+  return result.data
+}
+
+export async function disconnectWhatsAppConnection() {
+  const result = await apiRequest('/communications/whatsapp-connection', {
+    method: 'DELETE',
+  })
+  return result.data
+}

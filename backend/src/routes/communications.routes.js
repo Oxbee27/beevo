@@ -4,6 +4,10 @@ import {
   getBusinessCommunicationSettingsController,
   updateBusinessCommunicationSettingsController,
 } from "../controllers/business-communication-settings.controller.js";
+import {
+  getWhatsAppConnectionController,
+  disconnectWhatsAppController,
+} from "../controllers/whatsapp-connection.controller.js";
 import { authenticateToken } from "../middleware/auth.middleware.js";
 import { requirePermission } from "../middleware/require-permission.middleware.js";
 
@@ -35,6 +39,20 @@ router.patch(
   updateBusinessCommunicationSettingsController,
 );
 
+
+
+// WhatsApp account management is restricted to the business owner.
+router.get(
+  "/whatsapp-connection",
+  requireOwner,
+  getWhatsAppConnectionController,
+);
+
+router.delete(
+  "/whatsapp-connection",
+  requireOwner,
+  disconnectWhatsAppController,
+);
 
 router.get(
   "/channels",
