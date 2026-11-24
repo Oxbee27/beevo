@@ -117,6 +117,36 @@ export async function applyTermiiDeliveryStatus(
     );
   }
 
+  if (message.source_type === "conversation") {
+    const timelineUpdated = await client.query(
+      `
+        UPDATE conversation_messages
+        SET delivery_status = $4,
+            provider_message_id = COALESCE(provider_message_id, $5),
+            sent_at = COALESCE(sent_at, NOW()),
+            delivered_at = CASE
+              WHEN $4 = 'delivered' THEN COALESCE(delivered_at, NOW())
+              ELSE delivered_at
+            END
+        WHERE business_id = $1
+          AND conversation_id = $2
+          AND id = $3
+          AND direction = 'outbound'
+      `,
+      [
+        message.business_id,
+        message.conversation_id,
+        message.conversation_message_id,
+        outcome,
+        providerMessageId,
+      ],
+    );
+
+    if (timelineUpdated.rowCount !== 1) {
+      throw new Error("Could not update the Beevo SMS conversation timeline.");
+    }
+  }
+
   return "matched";
 }
 
@@ -184,7 +214,7 @@ export async function processTermiiWebhookEvent({
     ) {
       const matched = await client.query(
         `
-          SELECT id, business_id, status
+          SELECT id, business_id, status, source_type, conversation_id, conversation_message_id
           FROM follow_up_messages
           WHERE provider = 'termii'
             AND channel = 'sms'

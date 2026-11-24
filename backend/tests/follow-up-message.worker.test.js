@@ -9,6 +9,7 @@ function createHarness({
   noDueMessages = false,
   channel = "email",
   sourceType = "follow_up",
+  templateComponents = [],
   whatsappEvents = [],
   billingRateUnavailable = false,
   insufficientWalletFunds = false,
@@ -32,6 +33,7 @@ function createHarness({
       ? "The product you were interested in is back in stock."
       : "Thank you for your enquiry.",
     template_key: channel === "whatsapp" ? "hello_world" : null,
+    template_components: templateComponents,
     attempt_count: 0,
     max_attempts: 5,
     status: "pending",
@@ -369,6 +371,13 @@ function createHarness({
       if (normalized.startsWith("UPDATE product_interests")) {
         state.productInterest.status = "notified";
         return { rows: [{ id: state.productInterest.id }], rowCount: 1 };
+      }
+
+      if (
+        normalized.startsWith("UPDATE conversation_messages cm") &&
+        normalized.includes("SET delivery_status = 'unknown'")
+      ) {
+        return { rows: [], rowCount: 0 };
       }
 
       if (
@@ -869,6 +878,51 @@ describe("Beevo scheduled-message worker", () => {
   });
 
 
+  it("forwards queued WhatsApp template parameters to the sender unchanged", async () => {
+    const components = [{
+      type: "body",
+      parameters: [
+        { type: "text", text: "Ada" },
+        { type: "text", text: "Order 123" },
+      ],
+    }];
+
+    const { db } = createHarness({
+      channel: "whatsapp",
+      templateComponents: components,
+    });
+
+    const sendWhatsApp = vi.fn(async () => ({
+      provider: "meta_whatsapp",
+      providerMessageId: "wamid.template-parameters-101",
+    }));
+
+    const result = await processDueFollowUpMessages({
+      db,
+      workerId: "whatsapp-template-parameters-worker",
+      sendWhatsApp,
+      resolveWhatsAppCredentials: vi.fn(async () => ({
+        status: "ready",
+        credentials: {
+          accessToken: "tenant-token",
+          phoneNumberId: "123456789",
+        },
+      })),
+    });
+
+    expect(sendWhatsApp).toHaveBeenCalledWith({
+      to: "+2348012345678",
+      templateName: "hello_world",
+      components,
+      accessToken: "tenant-token",
+      phoneNumberId: "123456789",
+    });
+
+    expect(result.results).toEqual([
+      { id: "101", status: "sent" },
+    ]);
+  });
+
   it("sends an eligible WhatsApp message using its approved template", async () => {
     const { db, state } = createHarness({ channel: "whatsapp" });
     const sendWhatsApp = vi.fn(async () => ({
@@ -892,6 +946,7 @@ describe("Beevo scheduled-message worker", () => {
     expect(sendWhatsApp).toHaveBeenCalledWith({
       to: "+2348012345678",
       templateName: "hello_world",
+      components: [],
       accessToken: "tenant-token",
       phoneNumberId: "123456789",
     });

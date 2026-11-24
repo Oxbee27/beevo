@@ -56,6 +56,20 @@ async function claimDueMessages(db, workerId, batchSize, messageId = null) {
       [messageId],
     );
 
+    await client.query(
+      `
+        UPDATE conversation_messages cm
+        SET delivery_status = 'unknown'
+        FROM follow_up_messages m
+        WHERE m.business_id = cm.business_id
+          AND m.conversation_id = cm.conversation_id
+          AND m.conversation_message_id = cm.id
+          AND m.source_type = 'conversation'
+          AND m.status = 'unknown'
+          AND cm.direction = 'outbound'
+      `,
+    );
+
     // An abandoned restock delivery has an unknown provider outcome.
     // Do not automatically retry it because the provider may have accepted it.
     await client.query(
@@ -201,6 +215,26 @@ async function claimDueMessages(db, workerId, batchSize, messageId = null) {
                   AND i.status = 'waiting'
               )
             )
+            OR
+            (
+              m.source_type = 'conversation'
+              AND EXISTS (
+                SELECT 1
+                FROM business_conversations c
+                INNER JOIN business_communication_channels ch
+                  ON ch.business_id = c.business_id
+                 AND ch.id = c.channel_connection_id
+                WHERE c.business_id = m.business_id
+                  AND c.id = m.conversation_id
+                  AND c.customer_id = m.customer_id
+                  AND c.classification_status = 'business'
+                  AND c.conversation_status IN ('open', 'pending')
+                  AND c.channel_connection_id IS NOT NULL
+                  AND ch.channel = m.channel
+                  AND ch.is_active = TRUE
+                  AND ch.connection_status = 'connected'
+              )
+            )
           )
           AND m.channel IN ('email', 'sms', 'whatsapp')
           AND ($2::BIGINT IS NULL OR m.id = $2)
@@ -299,6 +333,39 @@ async function claimDueMessages(db, workerId, batchSize, messageId = null) {
 
 // Recheck consent and source-specific eligibility immediately before sending.
 async function canSendMessage(db, message) {
+  if (message.source_type === "conversation") {
+    const result = await db.query(
+      `
+        SELECT 1
+        FROM business_conversations c
+        INNER JOIN business_communication_channels ch
+          ON ch.business_id = c.business_id
+         AND ch.id = c.channel_connection_id
+        INNER JOIN customer_communication_preferences p
+          ON p.business_id = c.business_id
+         AND p.customer_id = c.customer_id
+         AND p.channel = ch.channel
+         AND p.consent_status = 'granted'
+        WHERE c.business_id = $1
+          AND c.id = $2
+          AND c.customer_id = $3
+          AND ch.channel = $4
+          AND c.classification_status = 'business'
+          AND c.conversation_status IN ('open', 'pending')
+          AND ch.is_active = TRUE
+          AND ch.connection_status = 'connected'
+      `,
+      [
+        message.business_id,
+        message.conversation_id,
+        message.customer_id,
+        message.channel,
+      ],
+    );
+
+    return result.rowCount > 0;
+  }
+
   if (message.source_type === "restock") {
     const result = await db.query(
       `
@@ -501,6 +568,28 @@ async function completeWithoutSending(db, message, workerId) {
     }
 
 
+    if (message.source_type === "conversation") {
+      const timelineUpdated = await client.query(
+        `
+          UPDATE conversation_messages
+          SET delivery_status = 'failed'
+          WHERE business_id = $1
+            AND conversation_id = $2
+            AND id = $3
+            AND direction = 'outbound'
+        `,
+        [
+          message.business_id,
+          message.conversation_id,
+          message.conversation_message_id,
+        ],
+      );
+
+      if (timelineUpdated.rowCount !== 1) {
+        throw new Error("Beevo could not update the cancelled conversation reply.");
+      }
+    }
+
     if (message.source_type === "restock") {
       const recipientUpdated = await client.query(
         `
@@ -603,6 +692,31 @@ async function completeSuccessfulDelivery(db, message, workerId, delivery) {
       throw new Error("Beevo could not confirm the delivery-attempt record.");
     }
 
+    if (message.source_type === "conversation") {
+      const timelineUpdated = await client.query(
+        `
+          UPDATE conversation_messages
+          SET delivery_status = 'sent',
+              provider_message_id = $4,
+              sent_at = COALESCE(sent_at, NOW())
+          WHERE business_id = $1
+            AND conversation_id = $2
+            AND id = $3
+            AND direction = 'outbound'
+        `,
+        [
+          message.business_id,
+          message.conversation_id,
+          message.conversation_message_id,
+          delivery.providerMessageId,
+        ],
+      );
+
+      if (timelineUpdated.rowCount !== 1) {
+        throw new Error("Beevo could not update the sent conversation reply.");
+      }
+    }
+
     // Capture the prepaid charge in the same transaction that records
     // provider acceptance. A rollback preserves the reservation.
     await captureCommunicationReservation(client, message);
@@ -632,6 +746,9 @@ async function completeSuccessfulDelivery(db, message, workerId, delivery) {
               id: message.id,
               business_id: message.business_id,
               status: reconciledMessageStatus,
+              source_type: message.source_type,
+              conversation_id: message.conversation_id,
+              conversation_message_id: message.conversation_message_id,
             },
             providerMessageId: delivery.providerMessageId,
             rawStatus: event.event_status,
@@ -679,6 +796,9 @@ async function completeSuccessfulDelivery(db, message, workerId, delivery) {
         business_id: message.business_id,
         status: "sent",
         provider_event_at: null,
+        source_type: message.source_type,
+        conversation_id: message.conversation_id,
+        conversation_message_id: message.conversation_message_id,
       };
 
       for (const event of unmatchedEvents.rows) {
@@ -875,7 +995,7 @@ async function recordFailedDelivery(db, message, workerId, error) {
             updated_at = NOW()
         WHERE business_id = $1 AND id = $2
           AND status = 'processing' AND locked_by = $3
-        RETURNING id
+        RETURNING id, status
       `,
       [
         message.business_id,
@@ -909,6 +1029,25 @@ async function recordFailedDelivery(db, message, workerId, error) {
 
     if (attemptUpdated.rowCount !== 1) {
       throw new Error("Beevo could not confirm the delivery-attempt record.");
+    }
+
+    if (message.source_type === "conversation") {
+      await client.query(
+        `
+          UPDATE conversation_messages
+          SET delivery_status = $4
+          WHERE business_id = $1
+            AND conversation_id = $2
+            AND id = $3
+            AND direction = 'outbound'
+        `,
+        [
+          message.business_id,
+          message.conversation_id,
+          message.conversation_message_id,
+          updated.rows[0].status === "failed" ? "failed" : "queued",
+        ],
+      );
     }
 
     // A definite provider rejection means the provider did not accept
@@ -997,6 +1136,24 @@ async function recordUnknownDelivery(db, message, workerId, error) {
 
     if (attemptUpdated.rowCount !== 1) {
       throw new Error("Beevo could not confirm the delivery-attempt record.");
+    }
+
+    if (message.source_type === "conversation") {
+      await client.query(
+        `
+          UPDATE conversation_messages
+          SET delivery_status = 'unknown'
+          WHERE business_id = $1
+            AND conversation_id = $2
+            AND id = $3
+            AND direction = 'outbound'
+        `,
+        [
+          message.business_id,
+          message.conversation_id,
+          message.conversation_message_id,
+        ],
+      );
     }
 
     if (message.source_type === "restock") {
@@ -1249,6 +1406,7 @@ export async function processDueFollowUpMessages({
             delivery = await sendWhatsApp({
               to: message.recipient,
               templateName: message.template_key,
+              components: message.template_components || [],
               accessToken: connection.credentials.accessToken,
               phoneNumberId: connection.credentials.phoneNumberId,
             });

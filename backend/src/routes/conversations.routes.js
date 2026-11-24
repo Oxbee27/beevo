@@ -9,6 +9,7 @@ import {
   classifyConversationController,
   listPendingConversationsController,
   getPendingConversationController,
+  sendConversationReplyController,
 } from "../controllers/conversations.controller.js";
 
 const router = Router();
@@ -46,6 +47,12 @@ router.patch(
   "/:id/classification",
   requireOwner,
   classifyConversationController,
+);
+
+router.post(
+  "/:id/replies",
+  requirePermission("conversations.edit"),
+  sendConversationReplyController,
 );
 
 export default router;

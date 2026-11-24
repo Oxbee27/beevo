@@ -17,8 +17,12 @@ function createHarness({
     business_id: "7",
     status: "sent",
     provider_event_at: null,
+    source_type: "follow_up",
+    conversation_id: null,
+    conversation_message_id: null,
   },
   failAttemptUpdate = false,
+  failTimelineUpdate = false,
 } = {}) {
   const calls = [];
 
@@ -53,6 +57,13 @@ function createHarness({
         return {
           rows: failAttemptUpdate ? [] : [{ id: "501" }],
           rowCount: failAttemptUpdate ? 0 : 1,
+        };
+      }
+
+      if (normalized.startsWith("UPDATE conversation_messages")) {
+        return {
+          rows: failTimelineUpdate ? [] : [{ id: "701" }],
+          rowCount: failTimelineUpdate ? 0 : 1,
         };
       }
 
@@ -115,6 +126,95 @@ describe("Resend webhook event processor", () => {
       sql.includes("UPDATE message_delivery_attempts") &&
       values[2] === "failed"
     )).toBe(true);
+  });
+
+  it("updates the conversation timeline when a conversation email is delivered", async () => {
+    const { calls } = createHarness({
+      message: {
+        id: "101",
+        business_id: "7",
+        status: "sent",
+        provider_event_at: null,
+        source_type: "conversation",
+        conversation_id: "201",
+        conversation_message_id: "701",
+      },
+    });
+
+    const result = await processResendWebhookEvent({
+      eventId: "evt_conversation_delivered_101",
+      event: makeEvent("email.delivered"),
+    });
+
+    expect(result).toEqual({ status: "matched" });
+
+    const timelineUpdate = calls.find(({ sql }) =>
+      sql.startsWith("UPDATE conversation_messages")
+    );
+
+    expect(timelineUpdate).toBeDefined();
+    expect(timelineUpdate.values).toEqual([
+      "7",
+      "201",
+      "701",
+      "delivered",
+      "resend-email-101",
+      new Date(NEW_EVENT_TIME),
+    ]);
+  });
+
+  it("marks the conversation timeline as failed when a conversation email bounces", async () => {
+    const { calls } = createHarness({
+      message: {
+        id: "101",
+        business_id: "7",
+        status: "sent",
+        provider_event_at: null,
+        source_type: "conversation",
+        conversation_id: "201",
+        conversation_message_id: "701",
+      },
+    });
+
+    const result = await processResendWebhookEvent({
+      eventId: "evt_conversation_bounced_101",
+      event: makeEvent("email.bounced"),
+    });
+
+    expect(result).toEqual({ status: "matched" });
+
+    const timelineUpdate = calls.find(({ sql }) =>
+      sql.startsWith("UPDATE conversation_messages")
+    );
+
+    expect(timelineUpdate).toBeDefined();
+    expect(timelineUpdate.values[3]).toBe("failed");
+    expect(timelineUpdate.values[4]).toBe("resend-email-101");
+  });
+
+  it("rolls back when the conversation timeline cannot be updated", async () => {
+    const { calls } = createHarness({
+      message: {
+        id: "101",
+        business_id: "7",
+        status: "sent",
+        provider_event_at: null,
+        source_type: "conversation",
+        conversation_id: "201",
+        conversation_message_id: "701",
+      },
+      failTimelineUpdate: true,
+    });
+
+    await expect(processResendWebhookEvent({
+      eventId: "evt_conversation_timeline_failure_101",
+      event: makeEvent("email.delivered"),
+    })).rejects.toThrow(
+      "Could not update the Beevo email conversation timeline."
+    );
+
+    expect(calls.some(({ sql }) => sql === "ROLLBACK")).toBe(true);
+    expect(calls.some(({ sql }) => sql === "COMMIT")).toBe(false);
   });
 
   it("allows a newer delivery event to correct an earlier failure", async () => {

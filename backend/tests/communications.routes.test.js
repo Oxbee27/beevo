@@ -5,6 +5,8 @@ import app from "../src/app.js";
 describe("Communications route protection", () => {
   it.each([
     ["GET", "/communications/channels"],
+    ["POST", "/communications/whatsapp-embedded-signup/state"],
+    ["POST", "/communications/whatsapp-embedded-signup/complete"],
     ["GET", "/communications/overview"],
     ["GET", "/communications/messages"],
     ["GET", "/communications/messages/1"],

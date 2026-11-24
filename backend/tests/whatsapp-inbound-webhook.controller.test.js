@@ -4,9 +4,11 @@ import { createHmac } from "node:crypto";
 const {
   processWhatsAppWebhookEvent,
   processWhatsAppInboundMessage,
+  processMetaWhatsAppAccountEvent,
 } = vi.hoisted(() => ({
   processWhatsAppWebhookEvent: vi.fn(),
   processWhatsAppInboundMessage: vi.fn(),
+  processMetaWhatsAppAccountEvent: vi.fn(),
 }));
 
 vi.mock("../src/services/process-whatsapp-webhook.service.js", () => ({
@@ -15,6 +17,10 @@ vi.mock("../src/services/process-whatsapp-webhook.service.js", () => ({
 
 vi.mock("../src/services/process-whatsapp-inbound-message.service.js", () => ({
   processWhatsAppInboundMessage,
+}));
+
+vi.mock("../src/services/process-meta-whatsapp-account-event.service.js", () => ({
+  processMetaWhatsAppAccountEvent,
 }));
 
 import {
@@ -56,6 +62,7 @@ describe("WhatsApp inbound webhook controller", () => {
       processed: true,
       stored: true,
     });
+    processMetaWhatsAppAccountEvent.mockResolvedValue({ status: "matched" });
   });
 
   it("passes inbound text messages and contact metadata to the inbound processor", async () => {
@@ -103,6 +110,7 @@ describe("WhatsApp inbound webhook controller", () => {
       processed: 1,
       statusesProcessed: 0,
       inboundProcessed: 1,
+      accountEventsProcessed: 0,
     });
   });
 
@@ -149,6 +157,7 @@ describe("WhatsApp inbound webhook controller", () => {
       processed: 2,
       statusesProcessed: 1,
       inboundProcessed: 1,
+      accountEventsProcessed: 0,
     });
   });
 
@@ -197,6 +206,7 @@ describe("WhatsApp inbound webhook controller", () => {
     expect(res.status).toHaveBeenCalledWith(401);
     expect(processWhatsAppInboundMessage).not.toHaveBeenCalled();
     expect(processWhatsAppWebhookEvent).not.toHaveBeenCalled();
+    expect(processMetaWhatsAppAccountEvent).not.toHaveBeenCalled();
   });
 
   it("returns a retryable server error when inbound processing fails", async () => {

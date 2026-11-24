@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   getBusinessCommunicationSettings,
   updateBusinessCommunicationSettings,
   getWhatsAppConnectionStatus,
   disconnectWhatsAppConnection,
+  createMetaWhatsAppSignupState,
+  completeMetaWhatsAppEmbeddedSignup,
 } from '../services/communication.service.js'
+import { loadMetaEmbeddedSignupSdk } from '../services/meta-embedded-signup.js'
 
 const emptySettings = {
   email_sender_name: '',
@@ -18,6 +21,13 @@ const emptySettings = {
   whatsapp_display_number: '',
   whatsapp_status: 'not_configured',
 }
+
+const META_APP_ID = import.meta.env.VITE_META_APP_ID?.trim() || ''
+const META_EMBEDDED_SIGNUP_CONFIG_ID =
+  import.meta.env.VITE_META_EMBEDDED_SIGNUP_CONFIG_ID?.trim() || ''
+const META_SIGNUP_CONFIGURED = Boolean(
+  META_APP_ID && META_EMBEDDED_SIGNUP_CONFIG_ID
+)
 
 const statusLabels = {
   not_configured: 'Not configured',
@@ -91,6 +101,15 @@ export default function BusinessCommunicationSettingsPage() {
   const [whatsappConnection, setWhatsappConnection] = useState(null)
   const [connectionLoading, setConnectionLoading] = useState(true)
   const [disconnecting, setDisconnecting] = useState(false)
+  const [metaReady, setMetaReady] = useState(false)
+  const [metaConnecting, setMetaConnecting] = useState(false)
+  const [metaError, setMetaError] = useState('')
+  const [metaInfo, setMetaInfo] = useState('')
+  const [metaSignupPending, setMetaSignupPending] = useState(false)
+  const [registrationPin, setRegistrationPin] = useState('')
+  const metaSdkRef = useRef(null)
+  const signupStateRef = useRef(null)
+  const pendingSignupRef = useRef(null)
 
   // Automatically dismiss save feedback after four seconds.
   useEffect(() => {
@@ -150,6 +169,272 @@ export default function BusinessCommunicationSettingsPage() {
       active = false
     }
   }, [])
+
+  // Prepare the SDK and a short-lived, one-time backend state before
+  // the user clicks. This allows FB.login to run directly from the click.
+  useEffect(() => {
+    if (!META_SIGNUP_CONFIGURED) return
+
+    let active = true
+
+    async function prepareMetaSignup() {
+      try {
+        const [sdk, stateResult] = await Promise.all([
+          loadMetaEmbeddedSignupSdk(META_APP_ID),
+          createMetaWhatsAppSignupState(),
+        ])
+
+        if (!active) return
+
+        metaSdkRef.current = sdk
+        signupStateRef.current = stateResult?.data?.state || null
+
+        if (!signupStateRef.current) {
+          throw new Error('Unable to prepare a secure WhatsApp signup session.')
+        }
+
+        setMetaReady(true)
+        setMetaError('')
+      } catch (setupError) {
+        if (active) {
+          setMetaError(
+            setupError.message || 'Unable to prepare Meta WhatsApp signup.'
+          )
+        }
+      }
+    }
+
+    void prepareMetaSignup()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  function prepareMetaSignupCompletion() {
+    const pending = pendingSignupRef.current
+
+    if (
+      pending?.state &&
+      pending?.code &&
+      pending?.businessAccountId &&
+      pending?.phoneNumberId
+    ) {
+      setMetaSignupPending(true)
+      setMetaInfo(
+        'Meta has selected your WhatsApp account. Enter the six-digit registration PIN for this phone number to finish connecting it.'
+      )
+    }
+  }
+
+  async function handleMetaRegistrationSubmit(event) {
+    event.preventDefault()
+
+    const pending = pendingSignupRef.current
+    const pin = registrationPin.trim()
+
+    if (!/^\\d{6}$/.test(pin)) {
+      setMetaError('Enter the six-digit WhatsApp registration PIN.')
+      return
+    }
+
+    if (
+      !pending ||
+      pending.completing ||
+      !pending.state ||
+      !pending.code ||
+      !pending.businessAccountId ||
+      !pending.phoneNumberId
+    ) {
+      setMetaError('The Meta signup session is incomplete. Please start again.')
+      return
+    }
+
+    pending.completing = true
+    setMetaConnecting(true)
+    setMetaError('')
+    setMetaInfo('Registering your WhatsApp number and completing setup…')
+    setError('')
+    setNotice('')
+
+    try {
+      await completeMetaWhatsAppEmbeddedSignup({
+        state: pending.state,
+        code: pending.code,
+        businessAccountId: pending.businessAccountId,
+        phoneNumberId: pending.phoneNumberId,
+        pin,
+      })
+
+      const refreshedConnection = await getWhatsAppConnectionStatus()
+      setWhatsappConnection(refreshedConnection)
+      setNotice('WhatsApp has been registered and connected successfully.')
+      setMetaInfo('')
+      setMetaSignupPending(false)
+      setRegistrationPin('')
+      pendingSignupRef.current = null
+      signupStateRef.current = null
+
+      // Prepare a fresh state for a future reconnection.
+      try {
+        const nextState = await createMetaWhatsAppSignupState()
+        signupStateRef.current = nextState?.data?.state || null
+        setMetaReady(Boolean(signupStateRef.current))
+      } catch {
+        setMetaReady(false)
+      }
+    } catch (signupError) {
+      setMetaError(
+        signupError.message || 'Unable to connect WhatsApp. Please try again.'
+      )
+      setMetaInfo('')
+      setMetaSignupPending(false)
+      setRegistrationPin('')
+      pendingSignupRef.current = null
+      signupStateRef.current = null
+      setMetaReady(false)
+
+      // The backend consumes the state before exchanging the Meta code.
+      // A failed exchange therefore requires a new signup state.
+      try {
+        const nextState = await createMetaWhatsAppSignupState()
+        signupStateRef.current = nextState?.data?.state || null
+        setMetaReady(Boolean(signupStateRef.current))
+      } catch {
+        setMetaReady(false)
+      }
+    } finally {
+      setMetaConnecting(false)
+    }
+  }
+
+  // Meta sends the selected WhatsApp assets through a postMessage event.
+  useEffect(() => {
+    function handleMetaMessage(event) {
+      let hostname
+
+      try {
+        hostname = new URL(event.origin).hostname
+      } catch {
+        return
+      }
+
+      if (
+        hostname !== 'facebook.com' &&
+        !hostname.endsWith('.facebook.com')
+      ) {
+        return
+      }
+
+      let message = event.data
+
+      if (typeof message === 'string') {
+        try {
+          message = JSON.parse(message)
+        } catch {
+          return
+        }
+      }
+
+      if (message?.type !== 'WA_EMBEDDED_SIGNUP') return
+
+      if (message.event === 'CANCEL') {
+        setMetaSignupPending(false)
+        setRegistrationPin('')
+        pendingSignupRef.current = null
+        setMetaInfo('WhatsApp setup was cancelled. You can try again whenever you are ready.')
+        return
+      }
+
+      if (message.event === 'ERROR') {
+        setMetaError(
+          message.data?.error_message ||
+            'Meta reported a problem during WhatsApp setup.'
+        )
+        setMetaInfo('')
+        setMetaSignupPending(false)
+        setRegistrationPin('')
+        pendingSignupRef.current = null
+        return
+      }
+
+      if (message.event !== 'FINISH') return
+
+      const data = message.data || {}
+      const pending = pendingSignupRef.current
+
+      if (!pending) return
+
+      pending.businessAccountId = data.waba_id || ''
+      pending.phoneNumberId = data.phone_number_id || ''
+
+      prepareMetaSignupCompletion()
+    }
+
+    window.addEventListener('message', handleMetaMessage)
+
+    return () => {
+      window.removeEventListener('message', handleMetaMessage)
+    }
+  }, [])
+
+  function handleMetaWhatsAppConnect() {
+    const sdk = metaSdkRef.current
+    const state = signupStateRef.current
+
+    if (!sdk || !state || metaConnecting) {
+      setMetaError('WhatsApp setup is not ready yet. Please wait and try again.')
+      return
+    }
+
+    setMetaError('')
+    setMetaInfo('')
+    setError('')
+    setNotice('')
+
+    pendingSignupRef.current = {
+      state,
+      code: '',
+      businessAccountId: '',
+      phoneNumberId: '',
+      completing: false,
+    }
+
+    try {
+      // Keep this call directly inside the click handler for popup permissions.
+      sdk.login(
+        (response) => {
+          const pending = pendingSignupRef.current
+
+          if (!pending) return
+
+          if (response?.authResponse?.code) {
+            pending.code = response.authResponse.code
+            prepareMetaSignupCompletion()
+            return
+          }
+
+          pendingSignupRef.current = null
+          setMetaSignupPending(false)
+          setRegistrationPin('')
+          setMetaInfo('Meta signup was not completed. You can try again.')
+        },
+        {
+          config_id: META_EMBEDDED_SIGNUP_CONFIG_ID,
+          response_type: 'code',
+          override_default_response_type: true,
+          extras: {
+            setup: {},
+          },
+        },
+      )
+    } catch {
+      pendingSignupRef.current = null
+      setMetaSignupPending(false)
+      setRegistrationPin('')
+      setMetaError('Unable to open Meta signup. Please try again.')
+    }
+  }
 
   async function handleWhatsAppDisconnect() {
     const confirmed = window.confirm(
@@ -303,6 +588,102 @@ export default function BusinessCommunicationSettingsPage() {
               This status reflects the actual Meta WhatsApp connection, not the account IDs saved below.
             </p>
           </div>
+
+          {META_SIGNUP_CONFIGURED ? (
+            <div className="space-y-2 rounded-xl border border-inkberry/10 bg-warm-ivory p-4">
+              <div>
+                <h3 className="text-sm font-semibold text-inkberry">
+                  Connect with Meta
+                </h3>
+                <p className="mt-1 text-sm leading-5 text-inkberry/60">
+                  Securely connect your business WhatsApp account through Meta.
+                  Your business owner will approve the requested access in Meta.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleMetaWhatsAppConnect}
+                disabled={
+                  !metaReady ||
+                  metaConnecting ||
+                  metaSignupPending ||
+                  Boolean(whatsappConnection?.connected)
+                }
+                className="min-h-11 rounded-xl bg-inkberry px-5 py-3 text-sm font-semibold text-white transition hover:bg-inkberry/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {metaConnecting
+                  ? 'Connecting WhatsApp…'
+                  : metaReady
+                    ? 'Connect WhatsApp with Meta'
+                    : 'Preparing secure connection…'}
+              </button>
+
+              {metaSignupPending && (
+                <form
+                  onSubmit={handleMetaRegistrationSubmit}
+                  className="space-y-3 rounded-xl border border-inkberry/10 bg-white p-4"
+                >
+                  <div>
+                    <label
+                      htmlFor="meta-whatsapp-registration-pin"
+                      className="block text-sm font-medium text-inkberry"
+                    >
+                      WhatsApp two-step verification PIN
+                    </label>
+                    <p className="mt-1 text-xs leading-5 text-inkberry/60">
+                      Enter the six-digit PIN associated with this WhatsApp phone number.
+                    </p>
+                  </div>
+
+                  <input
+                    id="meta-whatsapp-registration-pin"
+                    type="password"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="[0-9]{6}"
+                    maxLength={6}
+                    required
+                    value={registrationPin}
+                    onChange={(event) =>
+                      setRegistrationPin(event.target.value.replace(/\\D/g, '').slice(0, 6))
+                    }
+                    disabled={metaConnecting}
+                    aria-label="WhatsApp registration PIN"
+                    className="min-h-11 w-full rounded-xl border border-inkberry/20 bg-white px-4 py-3 text-base tracking-[0.3em] text-inkberry outline-none focus:border-inkberry disabled:opacity-60"
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={registrationPin.length !== 6 || metaConnecting}
+                    className="min-h-11 rounded-xl bg-inkberry px-5 py-3 text-sm font-semibold text-white transition hover:bg-inkberry/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {metaConnecting
+                      ? 'Registering WhatsApp…'
+                      : 'Finish WhatsApp registration'}
+                  </button>
+                </form>
+              )}
+
+              {metaError && (
+                <p role="alert" className="text-sm text-red-700">
+                  {metaError}
+                </p>
+              )}
+
+              {metaInfo && (
+                <p role="status" className="text-sm text-inkberry/65">
+                  {metaInfo}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-800">
+              Meta Embedded Signup is not configured yet. Add the Meta App ID
+              and Embedded Signup Configuration ID to the frontend environment
+              to enable this connection method.
+            </p>
+          )}
 
           {connectionLoading ? (
             <p className="text-sm text-inkberry/55">Checking WhatsApp connection…</p>

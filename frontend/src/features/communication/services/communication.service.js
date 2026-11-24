@@ -95,6 +95,14 @@ export async function getConversation(id) {
   return result.data
 }
 
+export async function sendConversationReply(id, payload) {
+  const result = await apiRequest(`/conversations/${id}/replies`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return result.data
+}
+
 export function getBusinessCommunicationSettings() {
   return apiRequest('/communications/business-settings')
 }
@@ -117,4 +125,25 @@ export async function disconnectWhatsAppConnection() {
     method: 'DELETE',
   })
   return result.data
+}
+
+export async function createMetaWhatsAppSignupState() {
+  const result = await apiRequest(
+    '/communications/whatsapp-embedded-signup/state',
+    { method: 'POST' },
+  )
+
+  return result
+}
+
+export async function completeMetaWhatsAppEmbeddedSignup(payload) {
+  const result = await apiRequest(
+    '/communications/whatsapp-embedded-signup/complete',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+  )
+
+  return result
 }

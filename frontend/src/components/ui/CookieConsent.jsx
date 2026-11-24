@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import './CookieConsent.css'
 
 const CONSENT_KEY = 'beevo_cookie_consent'
@@ -11,11 +11,7 @@ const defaultPreferences = {
 }
 
 export default function CookieConsent() {
-  const [visible, setVisible] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
-  const [preferences, setPreferences] = useState(defaultPreferences)
-
-  useEffect(() => {
+  const [visible, setVisible] = useState(() => {
     try {
       const saved = localStorage.getItem(CONSENT_KEY)
 
@@ -23,15 +19,17 @@ export default function CookieConsent() {
         const consent = JSON.parse(saved)
 
         if (consent.version === CONSENT_VERSION) {
-          return
+          return false
         }
       }
 
-      setVisible(true)
+      return true
     } catch {
-      setVisible(true)
+      return true
     }
-  }, [])
+  })
+  const [showSettings, setShowSettings] = useState(false)
+  const [preferences, setPreferences] = useState(defaultPreferences)
 
   function saveConsent(selectedPreferences) {
     const consent = {

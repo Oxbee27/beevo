@@ -6,6 +6,9 @@ import {
 import {
   classifyBusinessConversation,
 } from "../services/classify-business-conversation.service.js";
+import {
+  sendBusinessConversationReply,
+} from "../services/send-business-conversation-reply.service.js";
 
 function positiveInteger(value) {
   if (value === undefined || value === null || value === "") return null;
@@ -242,6 +245,95 @@ export async function getPendingConversationController(req, res) {
       res,
       500,
       "We couldn't load this pending conversation. Please try again.",
+    );
+  }
+}
+
+
+export async function sendConversationReplyController(req, res) {
+  const conversationId = positiveInteger(req.params.id);
+  const body = req.body || {};
+  const messageBody = typeof body.body === "string" ? body.body.trim() : "";
+  const subject = typeof body.subject === "string" ? body.subject.trim() : "";
+  const templateKey = typeof body.templateKey === "string"
+    ? body.templateKey.trim()
+    : "";
+  const templateComponents = body.templateComponents === undefined
+    ? []
+    : body.templateComponents;
+  const idempotencyKey = typeof body.idempotencyKey === "string"
+    ? body.idempotencyKey.trim()
+    : undefined;
+
+  if (!conversationId) {
+    return sendError(res, 400, "Please provide a valid conversation ID.");
+  }
+
+  if (messageBody.length > 5000) {
+    return sendError(res, 400, "Your reply is too long. Please keep it under 5,000 characters.");
+  }
+
+  if (subject.length > 255 || templateKey.length > 100) {
+    return sendError(res, 400, "Please check the email subject or template name.");
+  }
+
+  if (
+    !Array.isArray(templateComponents) ||
+    templateComponents.length > 1 ||
+    templateComponents.some((component) =>
+      !component ||
+      component.type !== "body" ||
+      !Array.isArray(component.parameters) ||
+      component.parameters.length > 20 ||
+      component.parameters.some((parameter) =>
+        !parameter ||
+        parameter.type !== "text" ||
+        typeof parameter.text !== "string" ||
+        !parameter.text.trim() ||
+        parameter.text.length > 1024
+      )
+    )
+  ) {
+    return sendError(res, 400, "Please check the WhatsApp template values and try again.");
+  }
+
+  if (idempotencyKey && idempotencyKey.length > 150) {
+    return sendError(res, 400, "Please submit the reply again.");
+  }
+
+  try {
+    const result = await sendBusinessConversationReply({
+      businessId: req.user.businessId,
+      conversationId,
+      userId: req.user.id,
+      subject: subject || null,
+      body: messageBody,
+      templateKey: templateKey || null,
+      templateComponents,
+      idempotencyKey,
+    });
+
+    if (result.notFound) {
+      return sendError(res, 404, "We couldn't find that conversation.");
+    }
+
+    return res.status(result.duplicate ? 200 : 202).json({
+      success: true,
+      message: result.duplicate
+        ? "This reply has already been added to the delivery queue."
+        : "Your reply has been added to the delivery queue.",
+      data: result,
+    });
+  } catch (error) {
+    if (error.statusCode === 409) {
+      return sendError(res, 409, error.message);
+    }
+
+    console.error("Beevo could not queue a conversation reply:", error.message);
+    return sendError(
+      res,
+      500,
+      "We couldn't queue your reply. Please try again.",
     );
   }
 }

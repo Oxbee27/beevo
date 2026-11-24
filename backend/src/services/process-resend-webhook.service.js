@@ -58,7 +58,14 @@ export async function processResendWebhookEvent({ eventId, event }) {
       } else {
         const matched = await client.query(
           `
-            SELECT id, business_id, status, provider_event_at
+            SELECT
+              id,
+              business_id,
+              status,
+              provider_event_at,
+              source_type,
+              conversation_id,
+              conversation_message_id
             FROM follow_up_messages
             WHERE provider = 'resend'
               AND channel = 'email'
@@ -162,6 +169,46 @@ export async function processResendWebhookEvent({ eventId, event }) {
 
             if (attempt.rowCount !== 1) {
               throw new Error("Could not update the matching delivery attempt.");
+            }
+
+            if (message.source_type === "conversation") {
+              const timelineStatus = isDelivered ? "delivered" : "failed";
+
+              const timelineUpdated = await client.query(
+                `
+                  UPDATE conversation_messages
+                  SET delivery_status = $4,
+                      provider_message_id = COALESCE(provider_message_id, $5),
+                      sent_at = CASE
+                        WHEN $4 = 'delivered'
+                          THEN COALESCE(sent_at, $6)
+                        ELSE sent_at
+                      END,
+                      delivered_at = CASE
+                        WHEN $4 = 'delivered'
+                          THEN COALESCE(delivered_at, $6)
+                        ELSE delivered_at
+                      END
+                  WHERE business_id = $1
+                    AND conversation_id = $2
+                    AND id = $3
+                    AND direction = 'outbound'
+                `,
+                [
+                  message.business_id,
+                  message.conversation_id,
+                  message.conversation_message_id,
+                  timelineStatus,
+                  providerMessageId,
+                  eventCreatedAt,
+                ],
+              );
+
+              if (timelineUpdated.rowCount !== 1) {
+                throw new Error(
+                  "Could not update the Beevo email conversation timeline.",
+                );
+              }
             }
 
             processingResult = "matched";

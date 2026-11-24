@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext.jsx'
+import { buildConversationReplyPayload } from '../utils/whatsapp-template.js'
 import {
   classifyConversation,
   getConversation,
   getConversations,
   getPendingConversation,
   getPendingConversations,
+  sendConversationReply,
 } from '../services/communication.service.js'
 
 function formatDate(value) {
@@ -49,6 +51,12 @@ export default function ConversationWorkspace() {
   const [selectedConversation, setSelectedConversation] = useState(null)
   const [conversationDetail, setConversationDetail] = useState(null)
   const [conversationDetailLoading, setConversationDetailLoading] = useState(false)
+  const [replyBody, setReplyBody] = useState('')
+  const [replySubject, setReplySubject] = useState('')
+  const [replyTemplateKey, setReplyTemplateKey] = useState('')
+  const [replySending, setReplySending] = useState(false)
+  const [replyError, setReplyError] = useState('')
+  const [replySuccess, setReplySuccess] = useState('')
 
   const loadPending = useCallback(async () => {
     if (!isOwner) return
@@ -138,6 +146,57 @@ export default function ConversationWorkspace() {
       setConversationError(error.message || 'Unable to open this conversation.')
     } finally {
       setConversationDetailLoading(false)
+    }
+  }
+
+  async function submitConversationReply(event) {
+    event.preventDefault()
+
+    if (!selectedConversation || !conversationDetail || replySending) return
+
+    const channel = String(
+      conversationDetail.conversation?.channel || '',
+    ).toLowerCase()
+
+    setReplyError('')
+    setReplySuccess('')
+    setReplySending(true)
+
+    try {
+      const preparedReply = buildConversationReplyPayload({
+        channel,
+        body: replyBody,
+        subject: replySubject,
+        templateKey: replyTemplateKey,
+      })
+
+      if (preparedReply.error) {
+        setReplyError(preparedReply.error)
+        return
+      }
+
+      const payload = preparedReply.payload
+
+      await sendConversationReply(selectedConversation, payload)
+
+      setReplyBody('')
+      setReplySubject('')
+      setReplyTemplateKey('')
+      setReplySuccess('Your reply has been added to the delivery queue.')
+
+      const [detail] = await Promise.all([
+        getConversation(selectedConversation),
+        loadConversations(),
+      ])
+      setConversationDetail(detail)
+    } catch (error) {
+      setReplyError(
+        error.status === 403
+          ? 'You do not have permission to reply to this conversation.'
+          : error.message || 'Unable to queue your reply. Please try again.',
+      )
+    } finally {
+      setReplySending(false)
     }
   }
 
@@ -394,6 +453,130 @@ export default function ConversationWorkspace() {
                       </p>
                     )}
                   </div>
+
+                  <form onSubmit={submitConversationReply}
+                    className="mt-4 space-y-3 rounded-xl border border-inkberry/10 p-4">
+                    {(() => {
+                      const channel = String(
+                        conversationDetail.conversation?.channel || '',
+                      ).toLowerCase()
+                      const isOpen = ['open', 'pending'].includes(
+                        conversationDetail.conversation?.conversation_status,
+                      )
+                      const supported = ['email', 'sms', 'whatsapp'].includes(channel)
+
+                      if (!supported) {
+                        return (
+                          <p className="text-sm text-inkberry/55">
+                            Replies are not supported for this channel.
+                          </p>
+                        )
+                      }
+
+                      if (!isOpen) {
+                        return (
+                          <p className="text-sm text-inkberry/55">
+                            This conversation is resolved and cannot receive replies.
+                          </p>
+                        )
+                      }
+
+                      return (
+                        <>
+                          <div>
+                            <h4 className="text-sm font-semibold text-inkberry">
+                              Reply to customer
+                            </h4>
+                            <p className="mt-1 text-xs text-inkberry/55">
+                              {channel.toUpperCase()} · {conversationDetail.conversation?.contact_identifier}
+                            </p>
+                          </div>
+
+                          {channel === 'email' && (
+                            <label className="block">
+                              <span className="mb-1 block text-xs font-semibold text-inkberry/65">
+                                Email subject
+                              </span>
+                              <input
+                                type="text"
+                                required
+                                maxLength={250}
+                                value={replySubject}
+                                onChange={(event) => setReplySubject(event.target.value)}
+                                placeholder="Enter email subject"
+                                className="w-full rounded-lg border border-inkberry/15 px-3 py-2.5 text-sm text-inkberry outline-none focus:border-inkberry"
+                              />
+                            </label>
+                          )}
+
+                          {channel === 'whatsapp' && (
+                            <label className="block">
+                              <span className="mb-1 block text-xs font-semibold text-inkberry/65">
+                                Approved WhatsApp template name
+                              </span>
+                              <input
+                                type="text"
+                                required
+                                maxLength={250}
+                                value={replyTemplateKey}
+                                onChange={(event) => setReplyTemplateKey(event.target.value)}
+                                placeholder="Enter approved template name"
+                                className="w-full rounded-lg border border-inkberry/15 px-3 py-2.5 text-sm text-inkberry outline-none focus:border-inkberry"
+                              />
+                              <span className="mt-1 block text-xs text-inkberry/45">
+                                Enter the exact approved template name.
+                              </span>
+                            </label>
+                          )}
+
+                          <label className="block">
+                            <span className="mb-1 block text-xs font-semibold text-inkberry/65">
+                              {channel === 'whatsapp' ? 'Template body values' : 'Message'}
+                            </span>
+                            <textarea
+                              required={channel !== 'whatsapp'}
+                              rows={4}
+                              maxLength={5000}
+                              value={replyBody}
+                              onChange={(event) => setReplyBody(event.target.value)}
+                              placeholder={channel === 'whatsapp'
+                                ? 'Enter one placeholder value per line, in template order. Leave empty if the template has no body placeholders.'
+                                : 'Write your reply to the customer…'}
+                              className="w-full resize-y rounded-lg border border-inkberry/15 px-3 py-2.5 text-sm leading-6 text-inkberry outline-none focus:border-inkberry"
+                            />
+                            {channel === 'whatsapp' && (
+                              <span className="mt-1 block text-xs leading-5 text-inkberry/45">
+                                These values fill the approved template placeholders. They are not a free-text WhatsApp message.
+                              </span>
+                            )}
+                          </label>
+
+                          <ErrorMessage>{replyError}</ErrorMessage>
+
+                          {replySuccess && (
+                            <p role="status"
+                              className="rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+                              {replySuccess}
+                            </p>
+                          )}
+
+                          <div className="flex justify-end">
+                            <button
+                              type="submit"
+                              disabled={
+                                replySending ||
+                                (channel !== 'whatsapp' && !replyBody.trim()) ||
+                                (channel === 'email' && !replySubject.trim()) ||
+                                (channel === 'whatsapp' && !replyTemplateKey.trim())
+                              }
+                              className="rounded-lg bg-inkberry px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+                              {replySending ? 'Queueing reply…' : 'Send reply'}
+                            </button>
+                          </div>
+                        </>
+                      )
+                    })()}
+                  </form>
                 </>
               ) : (
                 <p className="py-8 text-center text-sm text-inkberry/50">

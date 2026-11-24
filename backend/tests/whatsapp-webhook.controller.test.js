@@ -2,12 +2,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createHmac } from "node:crypto";
 import request from "supertest";
 
-const { processEvent } = vi.hoisted(() => ({
+const { processEvent, processAccountEvent } = vi.hoisted(() => ({
   processEvent: vi.fn(),
+  processAccountEvent: vi.fn(),
 }));
 
 vi.mock("../src/services/process-whatsapp-webhook.service.js", () => ({
   processWhatsAppWebhookEvent: processEvent,
+}));
+
+vi.mock("../src/services/process-meta-whatsapp-account-event.service.js", () => ({
+  processMetaWhatsAppAccountEvent: processAccountEvent,
 }));
 
 import app from "../src/app.js";
@@ -27,6 +32,7 @@ describe("WhatsApp webhook endpoint", () => {
     process.env.WHATSAPP_APP_SECRET = appSecret;
     process.env.WHATSAPP_VERIFY_TOKEN = verifyToken;
     processEvent.mockResolvedValue({ status: "matched" });
+    processAccountEvent.mockResolvedValue({ status: "matched" });
   });
 
   it("completes the Meta webhook verification handshake", async () => {
@@ -83,6 +89,7 @@ describe("WhatsApp webhook endpoint", () => {
       processed: 1,
       statusesProcessed: 1,
       inboundProcessed: 0,
+      accountEventsProcessed: 0,
     });
     expect(processEvent).toHaveBeenCalledWith({
       eventFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
@@ -95,6 +102,46 @@ describe("WhatsApp webhook endpoint", () => {
     });
   });
 
+
+  it("processes supported Meta WhatsApp account events", async () => {
+    const rawBody = JSON.stringify({
+      object: "whatsapp_business_account",
+      entry: [{
+        id: "waba-123",
+        changes: [{
+          field: "phone_number_quality_update",
+          value: {
+            display_phone_number: "+2348012345678",
+            event: "FLAGGED",
+            metadata: { phone_number_id: "phone-456" },
+          },
+        }],
+      }],
+    });
+
+    const response = await request(app)
+      .post("/webhooks/whatsapp")
+      .set("Content-Type", "application/json")
+      .set("X-Hub-Signature-256", signatureFor(rawBody))
+      .send(rawBody);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      success: true,
+      processed: 1,
+      statusesProcessed: 0,
+      inboundProcessed: 0,
+      accountEventsProcessed: 1,
+    });
+    expect(processAccountEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+      field: "phone_number_quality_update",
+      externalAccountId: "waba-123",
+      phoneNumberId: "phone-456",
+      event: expect.objectContaining({ event: "FLAGGED" }),
+    }));
+  });
+
   it("rejects an invalid signature", async () => {
     const response = await request(app)
       .post("/webhooks/whatsapp")
@@ -104,6 +151,7 @@ describe("WhatsApp webhook endpoint", () => {
 
     expect(response.status).toBe(401);
     expect(processEvent).not.toHaveBeenCalled();
+    expect(processAccountEvent).not.toHaveBeenCalled();
   });
 
   it("rejects requests when the app secret is missing", async () => {
@@ -116,6 +164,7 @@ describe("WhatsApp webhook endpoint", () => {
 
     expect(response.status).toBe(500);
     expect(processEvent).not.toHaveBeenCalled();
+    expect(processAccountEvent).not.toHaveBeenCalled();
   });
 
   it("rejects invalid JSON even when its signature is valid", async () => {
@@ -129,5 +178,6 @@ describe("WhatsApp webhook endpoint", () => {
 
     expect(response.status).toBe(400);
     expect(processEvent).not.toHaveBeenCalled();
+    expect(processAccountEvent).not.toHaveBeenCalled();
   });
 });

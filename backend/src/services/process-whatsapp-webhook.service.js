@@ -15,7 +15,9 @@ export async function applyWhatsAppDeliveryStatus(
   client,
   { message, providerMessageId, rawStatus, providerEventAt, errorMessage },
 ) {
-  const outcome = statusOutcome(normalizeStatus(rawStatus));
+  const normalizedRawStatus = normalizeStatus(rawStatus);
+  const isReadReceipt = normalizedRawStatus === "read";
+  const outcome = statusOutcome(normalizedRawStatus);
 
   if (!outcome) return "ignored";
 
@@ -32,13 +34,18 @@ export async function applyWhatsAppDeliveryStatus(
     }
   }
 
-  if (message.status === "delivered") return "already_final";
+  if (message.status === "delivered" && !isReadReceipt) {
+    return "already_final";
+  }
 
   if (outcome === "sent" && message.status === "failed") {
     return "already_final";
   }
 
-  if (!["sent", "unknown", "failed"].includes(message.status)) {
+  if (
+    !["sent", "unknown", "failed"].includes(message.status) &&
+    !(message.status === "delivered" && isReadReceipt)
+  ) {
     return "ignored";
   }
 
@@ -68,7 +75,10 @@ export async function applyWhatsAppDeliveryStatus(
         AND id = $2
         AND provider = 'meta_whatsapp'
         AND channel = 'whatsapp'
-        AND status IN ('sent', 'unknown', 'failed')
+        AND (
+          status IN ('sent', 'unknown', 'failed')
+          OR ($3 = 'delivered' AND status = 'delivered')
+        )
       RETURNING id
     `,
     [
@@ -107,6 +117,48 @@ export async function applyWhatsAppDeliveryStatus(
 
   if (attempt.rowCount !== 1) {
     throw new Error("Could not update the matching WhatsApp delivery attempt.");
+  }
+
+  if (message.source_type === "conversation") {
+    const timelineStatus = isReadReceipt ? "read" : outcome;
+
+    const timelineUpdated = await client.query(
+      `
+        UPDATE conversation_messages
+        SET delivery_status = $4,
+            provider_message_id = COALESCE(provider_message_id, $5),
+            sent_at = CASE
+              WHEN $4 IN ('sent', 'delivered', 'read')
+                THEN COALESCE(sent_at, $6)
+              ELSE sent_at
+            END,
+            delivered_at = CASE
+              WHEN $4 IN ('delivered', 'read')
+                THEN COALESCE(delivered_at, $6)
+              ELSE delivered_at
+            END,
+            read_at = CASE
+              WHEN $4 = 'read' THEN COALESCE(read_at, $6)
+              ELSE read_at
+            END
+        WHERE business_id = $1
+          AND conversation_id = $2
+          AND id = $3
+          AND direction = 'outbound'
+      `,
+      [
+        message.business_id,
+        message.conversation_id,
+        message.conversation_message_id,
+        timelineStatus,
+        providerMessageId,
+        eventDate,
+      ],
+    );
+
+    if (timelineUpdated.rowCount !== 1) {
+      throw new Error("Could not update the Beevo WhatsApp conversation timeline.");
+    }
   }
 
   return "matched";
@@ -227,7 +279,8 @@ export async function processWhatsAppWebhookEvent({ eventFingerprint, event }) {
     ) {
       const matched = await client.query(
         `
-          SELECT id, business_id, status, provider_event_at
+          SELECT id, business_id, status, provider_event_at,
+                 source_type, conversation_id, conversation_message_id
           FROM follow_up_messages
           WHERE provider = 'meta_whatsapp'
             AND channel = 'whatsapp'

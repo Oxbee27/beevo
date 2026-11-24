@@ -5,6 +5,14 @@ import {
 import {
   processWhatsAppInboundMessage,
 } from "../services/process-whatsapp-inbound-message.service.js";
+import { processMetaWhatsAppAccountEvent } from "../services/process-meta-whatsapp-account-event.service.js";
+
+const META_ACCOUNT_EVENT_FIELDS = new Set([
+  "account_update",
+  "account_review_update",
+  "phone_number_quality_update",
+  "phone_number_name_update",
+]);
 
 function safeEqual(left, right) {
   if (typeof left !== "string" || typeof right !== "string") return false;
@@ -177,12 +185,33 @@ export async function handleWhatsAppWebhook(req, res) {
   try {
     let statusesProcessed = 0;
     let inboundProcessed = 0;
+    let accountEventsProcessed = 0;
 
     for (const entry of payload.entry) {
       const changes = Array.isArray(entry?.changes) ? entry.changes : [];
 
       for (const change of changes) {
         const value = change?.value;
+
+        if (META_ACCOUNT_EVENT_FIELDS.has(change?.field)) {
+          const eventFingerprint = createHash("sha256")
+            .update(JSON.stringify({
+              entryId: entry?.id ?? null,
+              field: change.field,
+              value,
+            }))
+            .digest("hex");
+
+          await processMetaWhatsAppAccountEvent({
+            eventFingerprint,
+            field: change.field,
+            externalAccountId: entry?.id,
+            phoneNumberId: value?.metadata?.phone_number_id,
+            event: value,
+          });
+
+          accountEventsProcessed += 1;
+        }
 
         if (Array.isArray(value?.statuses)) {
           for (const status of value.statuses) {
@@ -205,9 +234,10 @@ export async function handleWhatsAppWebhook(req, res) {
 
     return res.status(200).json({
       success: true,
-      processed: statusesProcessed + inboundProcessed,
+      processed: statusesProcessed + inboundProcessed + accountEventsProcessed,
       statusesProcessed,
       inboundProcessed,
+      accountEventsProcessed,
     });
   } catch (error) {
     console.error("WhatsApp webhook processing failed:", error.message);

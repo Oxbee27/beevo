@@ -9,6 +9,10 @@ import {
   disconnectWhatsAppController,
 } from "../controllers/whatsapp-connection.controller.js";
 import { authenticateToken } from "../middleware/auth.middleware.js";
+import { createMetaEmbeddedSignupStateController } from "../controllers/meta-embedded-signup.controller.js";
+import {
+  completeMetaWhatsAppEmbeddedSignupController,
+} from "../controllers/meta-whatsapp-embedded-signup.controller.js";
 import { requirePermission } from "../middleware/require-permission.middleware.js";
 
 import {
@@ -52,6 +56,18 @@ router.delete(
   "/whatsapp-connection",
   requireOwner,
   disconnectWhatsAppController,
+);
+
+router.post(
+  "/whatsapp-embedded-signup/state",
+  requireOwner,
+  createMetaEmbeddedSignupStateController,
+);
+
+router.post(
+  "/whatsapp-embedded-signup/complete",
+  requireOwner,
+  completeMetaWhatsAppEmbeddedSignupController,
 );
 
 router.get(
