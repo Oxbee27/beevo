@@ -81,19 +81,28 @@ function WalletPage() {
     setError('')
 
     try {
-      const [walletResult, transactionResult] = await Promise.all([
+      const [walletResult, transactionResult] = await Promise.allSettled([
         getBusinessWallet(),
         getWalletTransactions(page, 20),
       ])
 
-      setWallet(walletResult)
-      setTransactions(transactionResult.transactions || [])
-      setPagination(transactionResult.pagination || {
-        page,
-        limit: 20,
-        total: 0,
-        totalPages: 1,
-      })
+      if (walletResult.status === 'rejected') {
+        throw walletResult.reason
+      }
+
+      setWallet(walletResult.value)
+
+      if (transactionResult.status === 'fulfilled') {
+        setTransactions(transactionResult.value.transactions || [])
+        setPagination(transactionResult.value.pagination || {
+          page,
+          limit: 20,
+          total: 0,
+          totalPages: 1,
+        })
+      } else {
+        setTransactions([])
+      }
     } catch (requestError) {
       setError(friendlyError(requestError))
     } finally {
@@ -103,16 +112,14 @@ function WalletPage() {
   }, [])
 
   useEffect(() => {
-    let active = true
+    const params = new URLSearchParams(location.search)
+    const hasPaymentReference =
+      params.has('reference') || params.has('trxref')
 
-    Promise.resolve().then(() => {
-      if (active) loadWalletData()
-    })
-
-    return () => {
-      active = false
+    if (!hasPaymentReference) {
+      loadWalletData()
     }
-  }, [loadWalletData])
+  }, [location.search, loadWalletData])
 
   // A Paystack return is not proof of payment.
   // Always ask Beevo's backend to verify the reference.
