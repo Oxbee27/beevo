@@ -117,6 +117,10 @@ export async function sendBusinessConversationReply({
       ? `WhatsApp template: ${templateKey}`
       : body.trim();
 
+    const messageSubject = conversation.channel === "email"
+      ? subject?.trim() || null
+      : null;
+
     const safeTemplateComponents = conversation.channel === "whatsapp"
       ? templateComponents
       : [];
@@ -225,7 +229,7 @@ export async function sendBusinessConversationReply({
         conversation.customer_id,
         conversation.channel,
         conversation.contact_identifier,
-        subject,
+        messageSubject,
         messageBody,
         templateKey,
         JSON.stringify(safeTemplateComponents),

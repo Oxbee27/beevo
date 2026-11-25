@@ -116,6 +116,7 @@ describe("sendBusinessConversationReply", () => {
       userId: 4,
       templateKey: "order_update",
       templateComponents,
+      subject: "Unexpected WhatsApp subject",
       idempotencyKey: "whatsapp-reply-001",
     });
 
@@ -140,12 +141,42 @@ describe("sendBusinessConversationReply", () => {
       sql.includes("INSERT INTO follow_up_messages"),
     );
 
+    expect(queueInsert[1][6]).toBeNull();
     expect(queueInsert[1][8]).toBe("order_update");
     expect(JSON.parse(queueInsert[1][9])).toEqual(templateComponents);
     expect(queueInsert[1][10]).toBe("whatsapp-reply-001");
 
     expect(client.query.mock.calls.at(-1)[0]).toBe("COMMIT");
     expect(client.release).toHaveBeenCalledOnce();
+  });
+
+  it("accepts WhatsApp templates with no body placeholders", async () => {
+    const result = await sendBusinessConversationReply({
+      businessId: 7,
+      conversationId: 10,
+      userId: 4,
+      templateKey: "order_confirmation",
+      templateComponents: [],
+      idempotencyKey: "whatsapp-empty-template-001",
+    });
+
+    expect(result.duplicate).toBe(false);
+
+    const timelineInsert = client.query.mock.calls.find(([sql]) =>
+      sql.includes("INSERT INTO conversation_messages"),
+    );
+
+    expect(JSON.parse(timelineInsert[1][6])).toEqual({
+      templateKey: "order_confirmation",
+      templateComponents: [],
+    });
+
+    const queueInsert = client.query.mock.calls.find(([sql]) =>
+      sql.includes("INSERT INTO follow_up_messages"),
+    );
+
+    expect(JSON.parse(queueInsert[1][9])).toEqual([]);
+    expect(client.query.mock.calls.at(-1)[0]).toBe("COMMIT");
   });
 
   it("rejects invalid WhatsApp template parameters without queuing a message", async () => {
@@ -215,6 +246,7 @@ describe("sendBusinessConversationReply", () => {
       conversationId: 10,
       userId: 4,
       body: "Your order is ready.",
+      subject: "Unexpected SMS subject",
       idempotencyKey: "sms-reply-001",
     });
 
@@ -233,6 +265,7 @@ describe("sendBusinessConversationReply", () => {
     );
 
     expect(queueInsert[1][4]).toBe("sms");
+    expect(queueInsert[1][6]).toBeNull();
     expect(queueInsert[1][7]).toBe("Your order is ready.");
     expect(JSON.parse(queueInsert[1][9])).toEqual([]);
 
