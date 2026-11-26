@@ -11,6 +11,7 @@ function createHarness({
   sourceType = "follow_up",
   templateComponents = [],
   whatsappEvents = [],
+  resendEvents = [],
   billingRateUnavailable = false,
   insufficientWalletFunds = false,
 } = {}) {
@@ -43,6 +44,7 @@ function createHarness({
     message: { ...message },
     attemptStatus: null,
     whatsappEvents: whatsappEvents.map((event) => ({ ...event })),
+    resendEvents: resendEvents.map((event) => ({ ...event })),
     restockRecipient: {
       id: "201",
       status: "queued",
@@ -173,8 +175,53 @@ function createHarness({
         };
       }
 
+      if (normalized.startsWith("SELECT id, event_type, event_created_at FROM resend_webhook_events")) {
+        const rows = state.resendEvents
+          .filter((event) =>
+            String(event.provider_message_id || values[0]) === String(values[0]) &&
+            event.processing_result === "unmatched"
+          )
+          .sort((a, b) => {
+            const aTime = a.event_created_at
+              ? new Date(a.event_created_at).getTime()
+              : Infinity;
+            const bTime = b.event_created_at
+              ? new Date(b.event_created_at).getTime()
+              : Infinity;
+            return aTime - bTime || Number(a.id) - Number(b.id);
+          });
+        return { rows, rowCount: rows.length };
+      }
+
+      if (normalized.startsWith("SELECT id, business_id, status, provider_event_at, source_type")) {
+        const matches =
+          state.message.provider === "resend" &&
+          state.message.channel === "email" &&
+          String(state.message.provider_message_id) === String(values[0]);
+        return {
+          rows: matches ? [{
+            id: state.message.id,
+            business_id: state.message.business_id,
+            status: state.message.status,
+            provider_event_at: state.message.provider_event_at || null,
+            source_type: state.message.source_type,
+            conversation_id: state.message.conversation_id || null,
+            conversation_message_id: state.message.conversation_message_id || null,
+          }] : [],
+          rowCount: matches ? 1 : 0,
+        };
+      }
+
       if (normalized.startsWith("SELECT id, event_status")) {
         return { rows: [], rowCount: 0 };
+      }
+
+      if (normalized.startsWith("UPDATE resend_webhook_events")) {
+        const event = state.resendEvents.find(
+          (item) => String(item.id) === String(values[0]),
+        );
+        if (event) event.processing_result = values[1];
+        return { rows: [], rowCount: event ? 1 : 0 };
       }
 
       if (normalized.startsWith("UPDATE whatsapp_webhook_events")) {
@@ -291,6 +338,7 @@ function createHarness({
           }
 
           state.message.status = "sent";
+          state.message.provider = values[3];
           state.message.provider_message_id = values[4];
 
           return { rows: [{ id: state.message.id }], rowCount: 1 };
@@ -1047,6 +1095,44 @@ describe("Beevo scheduled-message worker", () => {
     expect(state.whatsappEvents[0].processing_result).toBe("matched");
   });
 
+
+  it("reconciles an early delivered Resend webhook after saving the provider ID", async () => {
+    const eventDate = new Date("2026-11-11T11:00:00.000Z");
+    const { db, state } = createHarness({
+      channel: "email",
+      resendEvents: [{
+        id: "601",
+        provider_message_id: "resend.early-delivered-101",
+        event_type: "email.delivered",
+        event_created_at: eventDate,
+        processing_result: "unmatched",
+      }],
+    });
+
+    const sendEmail = vi.fn(async () => ({
+      provider: "resend",
+      providerMessageId: "resend.early-delivered-101",
+    }));
+
+    const result = await processDueFollowUpMessages({
+      db,
+      workerId: "resend-worker-2",
+      sendEmail,
+    });
+
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(result.results).toEqual([
+      { id: "101", status: "sent" },
+    ]);
+    expect(state.message.provider).toBe("resend");
+    expect(state.message.provider_message_id).toBe(
+      "resend.early-delivered-101",
+    );
+    expect(state.message.status).toBe("delivered");
+    expect(state.message.provider_event_at).toEqual(eventDate);
+    expect(state.attemptStatus).toBe("sent");
+    expect(state.resendEvents[0].processing_result).toBe("matched");
+  });
 
   it("sends a restock notification and marks its interest as notified", async () => {
     const { db, state } = createHarness({

@@ -14,6 +14,7 @@ import {
   applyTermiiDeliveryStatus,
   nextTermiiMessageStatus,
 } from "../services/process-termii-webhook.service.js";
+import { applyResendDeliveryStatus } from "../services/process-resend-webhook.service.js";
 
 async function claimDueMessages(db, workerId, batchSize, messageId = null) {
   const client = await db.connect();
@@ -827,6 +828,45 @@ async function completeSuccessfulDelivery(db, message, workerId, delivery) {
         await client.query(
           `
             UPDATE whatsapp_webhook_events
+            SET processing_result = $2,
+                processed_at = NOW()
+            WHERE id = $1
+              AND processing_result = 'unmatched'
+          `,
+          [event.id, reconciliationResult],
+        );
+      }
+    }
+
+    // Reconcile Resend events received before the email provider ID was persisted.
+    if (delivery.provider === "resend" && message.channel === "email") {
+      const unmatchedEvents = await client.query(
+        `
+          SELECT id, event_type, event_created_at
+          FROM resend_webhook_events
+          WHERE provider_message_id = $1
+            AND processing_result = 'unmatched'
+          ORDER BY event_created_at ASC NULLS LAST, id ASC
+          FOR UPDATE
+        `,
+        [delivery.providerMessageId],
+      );
+
+      for (const event of unmatchedEvents.rows) {
+        const reconciliationResult = await applyResendDeliveryStatus(
+          client,
+          {
+            providerMessageId: delivery.providerMessageId,
+            eventType: event.event_type,
+            eventCreatedAt: event.event_created_at
+              ? new Date(event.event_created_at)
+              : null,
+          },
+        );
+
+        await client.query(
+          `
+            UPDATE resend_webhook_events
             SET processing_result = $2,
                 processed_at = NOW()
             WHERE id = $1

@@ -15,6 +15,12 @@ const fingerprint = "a".repeat(64);
 
 function createHarness({
   duplicate = false,
+  existingEvent = {
+    id: "1",
+    provider_message_id: "termii-101",
+    event_status: "Delivered",
+    processing_result: "matched",
+  },
   message = {
     id: "101",
     business_id: "7",
@@ -41,6 +47,13 @@ function createHarness({
         return {
           rows: duplicate ? [] : [{ id: "1" }],
           rowCount: duplicate ? 0 : 1,
+        };
+      }
+
+      if (normalized.startsWith("SELECT id, provider_message_id, event_status, processing_result FROM termii_webhook_events")) {
+        return {
+          rows: existingEvent ? [{ ...existingEvent }] : [],
+          rowCount: existingEvent ? 1 : 0,
         };
       }
 
@@ -157,6 +170,46 @@ describe("Termii webhook event processor", () => {
     expect(calls.some(({ sql }) =>
       sql.startsWith("SELECT id, business_id")
     )).toBe(false);
+  });
+
+
+  it("retries a previously unmatched event when its message becomes available", async () => {
+    const { calls } = createHarness({
+      duplicate: true,
+      existingEvent: {
+        id: "1",
+        provider_message_id: "termii-101",
+        event_status: "Delivered",
+        processing_result: "unmatched",
+      },
+      message: {
+        id: "101",
+        business_id: "7",
+        status: "sent",
+      },
+    });
+
+    const result = await processTermiiWebhookEvent({
+      eventFingerprint: fingerprint,
+      // The original persisted event must be used for reconciliation.
+      event: { message_id: "different-id", status: "Message Failed" },
+    });
+
+    expect(result).toEqual({ status: "matched" });
+
+    expect(calls.some(({ sql, values }) =>
+      sql.startsWith("SELECT id, business_id") &&
+      values[0] === "termii-101"
+    )).toBe(true);
+
+    expect(calls.some(({ sql, values }) =>
+      sql.startsWith("UPDATE follow_up_messages") &&
+      values[2] === "delivered"
+    )).toBe(true);
+
+    expect(calls.some(({ sql }) =>
+      sql.startsWith("UPDATE termii_webhook_events")
+    )).toBe(true);
   });
 
   it("records unmatched provider message IDs", async () => {

@@ -165,13 +165,13 @@ export async function processTermiiWebhookEvent({
     throw new Error("A valid Termii webhook event is required.");
   }
 
-  const providerMessageId =
+  let providerMessageId =
     typeof event.message_id === "string" ||
     typeof event.message_id === "number"
       ? String(event.message_id)
       : null;
 
-  const rawStatus =
+  let rawStatus =
     typeof event.status === "string" ? event.status.trim() : "";
 
   const client = await pool.connect();
@@ -202,8 +202,33 @@ export async function processTermiiWebhookEvent({
     );
 
     if (inserted.rowCount === 0) {
-      await client.query("COMMIT");
-      return { status: "duplicate" };
+      const existingEvent = await client.query(
+        `
+          SELECT
+            id,
+            provider_message_id,
+            event_status,
+            processing_result
+          FROM termii_webhook_events
+          WHERE event_fingerprint = $1
+          FOR UPDATE
+        `,
+        [eventFingerprint],
+      );
+
+      const webhookEvent = existingEvent.rows[0];
+
+      if (
+        !webhookEvent ||
+        webhookEvent.processing_result !== "unmatched"
+      ) {
+        await client.query("COMMIT");
+        return { status: "duplicate" };
+      }
+
+      // Retry reconciliation using the original persisted event.
+      providerMessageId = webhookEvent.provider_message_id;
+      rawStatus = webhookEvent.event_status || "";
     }
 
     let processingResult = "ignored";

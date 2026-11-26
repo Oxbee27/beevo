@@ -6,53 +6,13 @@ const DELIVERY_EVENTS = new Set([
   "email.failed",
 ]);
 
-export async function processResendWebhookEvent({ eventId, event }) {
-  if (!eventId || typeof eventId !== "string") {
-    throw new Error("A valid webhook event ID is required.");
-  }
-
-  if (!event || typeof event.type !== "string") {
-    throw new Error("A valid webhook event is required.");
-  }
-
-  const providerMessageId =
-    typeof event.data?.email_id === "string"
-      ? event.data.email_id
-      : null;
-
-  const parsedEventTime = Date.parse(event.created_at);
-  const eventCreatedAt = Number.isFinite(parsedEventTime)
-    ? new Date(parsedEventTime)
-    : null;
-
-  const client = await pool.connect();
-
-  try {
-    await client.query("BEGIN");
-
-    const inserted = await client.query(
-      `
-        INSERT INTO resend_webhook_events (
-          provider_event_id,
-          event_type,
-          provider_message_id,
-          event_created_at
-        )
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (provider_event_id) DO NOTHING
-        RETURNING id
-      `,
-      [eventId, event.type, providerMessageId, eventCreatedAt],
-    );
-
-    if (inserted.rowCount === 0) {
-      await client.query("COMMIT");
-      return { status: "duplicate" };
-    }
-
+export async function applyResendDeliveryStatus(
+  client,
+  { providerMessageId, eventType, eventCreatedAt },
+) {
     let processingResult = "ignored";
 
-    if (DELIVERY_EVENTS.has(event.type) && providerMessageId) {
+    if (DELIVERY_EVENTS.has(eventType) && providerMessageId) {
       if (!eventCreatedAt) {
         processingResult = "ignored";
       } else {
@@ -92,11 +52,11 @@ export async function processResendWebhookEvent({ eventId, event }) {
             // A confirmed delivery must never be downgraded by a failure event.
             processingResult = "already_final";
           } else if (["sent", "unknown", "failed"].includes(message.status)) {
-            const isDelivered = event.type === "email.delivered";
+            const isDelivered = eventType === "email.delivered";
             const outcome = isDelivered ? "delivered" : "failed";
 
             const failureMessage =
-              event.type === "email.bounced"
+              eventType === "email.bounced"
                 ? "The recipient's email address bounced."
                 : "The email provider reported a delivery failure.";
 
@@ -218,6 +178,89 @@ export async function processResendWebhookEvent({ eventId, event }) {
         }
       }
     }
+
+    return processingResult;
+}
+
+export async function processResendWebhookEvent({ eventId, event }) {
+  if (!eventId || typeof eventId !== "string") {
+    throw new Error("A valid webhook event ID is required.");
+  }
+
+  if (!event || typeof event.type !== "string") {
+    throw new Error("A valid webhook event is required.");
+  }
+
+  let providerMessageId =
+    typeof event.data?.email_id === "string"
+      ? event.data.email_id
+      : null;
+
+  const parsedEventTime = Date.parse(event.created_at);
+  let eventCreatedAt = Number.isFinite(parsedEventTime)
+    ? new Date(parsedEventTime)
+    : null;
+
+  let eventType = event.type;
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const inserted = await client.query(
+      `
+        INSERT INTO resend_webhook_events (
+          provider_event_id,
+          event_type,
+          provider_message_id,
+          event_created_at
+        )
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (provider_event_id) DO NOTHING
+        RETURNING id
+      `,
+      [eventId, eventType, providerMessageId, eventCreatedAt],
+    );
+
+    if (inserted.rowCount === 0) {
+      const existingEvent = await client.query(
+        `
+          SELECT
+            id,
+            provider_message_id,
+            event_type,
+            event_created_at,
+            processing_result
+          FROM resend_webhook_events
+          WHERE provider_event_id = $1
+          FOR UPDATE
+        `,
+        [eventId],
+      );
+
+      const webhookEvent = existingEvent.rows[0];
+
+      if (
+        !webhookEvent ||
+        webhookEvent.processing_result !== "unmatched"
+      ) {
+        await client.query("COMMIT");
+        return { status: "duplicate" };
+      }
+
+      // Retry using the original persisted provider event.
+      providerMessageId = webhookEvent.provider_message_id;
+      eventType = webhookEvent.event_type;
+      eventCreatedAt = webhookEvent.event_created_at
+        ? new Date(webhookEvent.event_created_at)
+        : null;
+    }
+
+    const processingResult = await applyResendDeliveryStatus(
+      client,
+      { providerMessageId, eventType, eventCreatedAt },
+    );
 
     await client.query(
       `

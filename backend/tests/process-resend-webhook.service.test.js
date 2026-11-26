@@ -12,6 +12,13 @@ const NEW_EVENT_TIME = "2030-01-03T10:00:00.000Z";
 
 function createHarness({
   duplicate = false,
+  existingEvent = {
+    id: "1",
+    provider_message_id: "resend-email-101",
+    event_type: "email.delivered",
+    event_created_at: NEW_EVENT_TIME,
+    processing_result: "matched",
+  },
   message = {
     id: "101",
     business_id: "7",
@@ -39,6 +46,13 @@ function createHarness({
         return {
           rows: duplicate ? [] : [{ id: "1" }],
           rowCount: duplicate ? 0 : 1,
+        };
+      }
+
+      if (normalized.startsWith("SELECT id, provider_message_id, event_type, event_created_at, processing_result FROM resend_webhook_events")) {
+        return {
+          rows: existingEvent ? [{ ...existingEvent }] : [],
+          rowCount: existingEvent ? 1 : 0,
         };
       }
 
@@ -317,6 +331,57 @@ describe("Resend webhook event processor", () => {
       sql.startsWith("SELECT id, business_id")
     )).toBe(false);
     expect(calls.some(({ sql }) => sql === "COMMIT")).toBe(true);
+  });
+
+  it("retries a previously unmatched event when its message becomes available", async () => {
+    const { calls } = createHarness({
+      duplicate: true,
+      existingEvent: {
+        id: "1",
+        provider_message_id: "resend-email-101",
+        event_type: "email.delivered",
+        event_created_at: NEW_EVENT_TIME,
+        processing_result: "unmatched",
+      },
+      message: {
+        id: "101",
+        business_id: "7",
+        status: "sent",
+        provider_event_at: null,
+        source_type: "follow_up",
+        conversation_id: null,
+        conversation_message_id: null,
+      },
+    });
+
+    const result = await processResendWebhookEvent({
+      eventId: "evt_unmatched_retry_101",
+      event: {
+        type: "email.bounced",
+        created_at: "2030-01-04T10:00:00.000Z",
+        data: {
+          email_id: "different-provider-id",
+        },
+      },
+    });
+
+    expect(result).toEqual({ status: "matched" });
+
+    expect(
+      calls.some(
+        ({ sql, values }) =>
+          sql.startsWith("SELECT id, business_id") &&
+          values[0] === "resend-email-101"
+      )
+    ).toBe(true);
+
+    expect(
+      calls.some(
+        ({ sql, values }) =>
+          sql.startsWith("UPDATE follow_up_messages") &&
+          values[2] === "delivered"
+      )
+    ).toBe(true);
   });
 
   it("records an event when its provider message ID is unknown", async () => {
