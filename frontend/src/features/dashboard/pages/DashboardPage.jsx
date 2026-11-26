@@ -88,7 +88,7 @@ export default function DashboardPage() {
 
         <Link
           to="/customers"
-          className="inline-flex w-fit items-center justify-center rounded-lg bg-inkberry px-5 py-3 text-sm font-semibold text-warm-ivory hover:bg-inkberry/90"
+          className="inline-flex w-fit items-center justify-center rounded-lg bg-warm-ivory px-5 py-3 text-sm font-semibold text-inkberry hover:bg-inkberry/90"
         >
           Add customer
         </Link>
